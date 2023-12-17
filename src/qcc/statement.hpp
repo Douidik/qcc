@@ -50,7 +50,7 @@ struct Scope_Statement : Statement
 struct Function_Statement : Statement
 {
     Function *function;
-    Scope_Statement *body;
+    Scope_Statement *scope;
 
     Statement_Kind kind() const override
     {
@@ -60,8 +60,6 @@ struct Function_Statement : Statement
 
 struct Define_Statement : Statement
 {
-    Token name;
-    Type type;
     Expression *expression;
     Variable *variable;
     Define_Statement *next;
@@ -85,8 +83,8 @@ struct Expression_Statement : Statement
 struct Condition_Statement : Statement
 {
     Expression *boolean;
-    Statement *statement_if;
-    Statement *statement_else;
+    Scope_Statement *statement_if;
+    Scope_Statement *statement_else;
 
     Statement_Kind kind() const override
     {
@@ -97,7 +95,7 @@ struct Condition_Statement : Statement
 struct While_Statement : Statement
 {
     Expression *boolean;
-    Statement *statement;
+    Scope_Statement *statement;
 
     Statement_Kind kind() const override
     {
@@ -110,7 +108,7 @@ struct For_Statement : Statement
     Expression *init;
     Expression *boolean;
     Expression *loop;
-    Statement *statement;
+    Scope_Statement *statement;
 
     Statement_Kind kind() const override
     {

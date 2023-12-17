@@ -8,7 +8,8 @@ namespace qcc
 
 struct Ast;
 struct Type_System;
-
+struct Type;
+    
 enum Statement_Kind : uint32;
 struct Statement;
 struct Scope_Statement;
@@ -32,8 +33,10 @@ struct String_Expression;
 struct Int_Expression;
 struct Float_Expression;
 struct Id_Expression;
-struct Define_Expression;
 struct Nested_Expression;
+struct Assign_Expression;
+struct Cast_Expression;
+struct Dot_Expression;
 
 enum Object_Kind : uint32;
 enum Type_Mod : uint32;

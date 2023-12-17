@@ -85,10 +85,9 @@ TEST(Regex, Range)
     EXPECT_THROW("0-9]"_rx, Error);
 }
 
-    
 TEST(Regex, Set)
 {
-    EXPECT_TRUE("_"_rx.match("\n"));    
+    EXPECT_TRUE("_"_rx.match("\n"));
     EXPECT_TRUE("a"_rx.match("a"));
     EXPECT_TRUE("o"_rx.match("+"));
     EXPECT_TRUE("n"_rx.match("7"));
@@ -188,6 +187,19 @@ TEST(Regex, Wave)
     EXPECT_THROW("a~"_rx, Error);
     EXPECT_THROW("~{}"_rx, Error);
     EXPECT_THROW("{}~"_rx, Error);
+}
+
+TEST(Regex, Not)
+{
+    EXPECT_FALSE("'abc' !'d'"_rx.match("abcd"));
+    EXPECT_EQ("'abc' !'d'"_rx.match("abc_").view(), "abc_");
+    EXPECT_EQ("{!'\n'}*"_rx.match("lorem ipsum\n hello").view(), "lorem ipsum");
+}
+
+TEST(Regex, Dash)
+{
+    EXPECT_EQ("'abc'/'d'"_rx.match("abcd").view(), "abc");
+    EXPECT_EQ("^~/_"_rx.match("words words").view(), "words");
 }
 
 } // namespace qcc::regex

@@ -3,61 +3,19 @@
 
 #include "fwd.hpp"
 #include "scan/scanner.hpp"
+#include "source_snippet.hpp"
 #include "type_system.hpp"
-#include <algorithm>
 
 namespace qcc
 {
-
-/*
-  stolen from: https://github.com/joehattori/tgocc/blob/master/parser/parse.go
-        program    = (function | globalVar)*
-    function   = baseType types.TypeDecl "(" (ident ("," ident)* )? ")" ("{" stmt* "}" | ";")
-    globalVar  = decl
-    stmt       = expr ";"
-                | "{" stmt* "}"
-                | "return" expr ";"
-                | "if" "(" expr ")" stmt ("else" stmt) ?
-                | "while" "(" expr ")" stmt
-                | "do" stmt "while" "(" expr ")" ";"
-                | "for" "(" (expr? ";" | decl) expr? ";" expr? ")" stmt
-                | "typedef" types.Type ident ("[" constExpr "]")* ";"
-                | "switch" "(" expr ")" "{" switchCase* ("default" ":" stmt*)? }"
-                | decl
-    switchCase = "case" num ":" stmt*
-    decl       = baseType types.TypeDecl ("[" constExpr "]")* "=" initialize ;" | baseTy ";"
-    tyDecl     = "*"* (ident | "(" types.TypeDecl ")")
-    expr       = assign
-    assign     = ternary (("=" | "+=" | "-=" | "*=" | "/=") assign) ?
-    ternary    = logOr ("?" expr ":" ternary)?
-    logOr      = logAnd ("||" logAnd)*
-    logAnd     = bitOr ("&&" bitOr)*
-    bitOr      = bitXor ("|" bitXor)*
-    bitXor     = bitAnd ("^" bitAnd)*
-    bitAnd     = equality ("&" equality)*
-    equality   = relational ("==" relational | "!=" relational)*
-    relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
-    shift      = add ("<<" add | ">>" add | "<<=" add | ">>=" add)
-    add        = mul ("+" mul | "-" mul)*
-    mul        = cat ("*" cast | "/" cast)*
-    cast       = "(" baseType "*"*  ")" cast | unary
-    unary      = ("+" | "-" | "*" | "&" | "!" | "~")? cast | ("++" | "--") unary | postfix
-    postfix    = primary (("[" expr "]") | ("." ident) | ("->" ident) | "++" | "--")*
-    primary    =  num
-                | "sizeof" unary
-                | str
-                | ident ("(" (expr ("," expr)* )? ")")?
-                | "(" expr ")"
-                | stmtExpr
-    stmtExpr   = "(" "{" stmt+ "}" ")"
-*/
 
 enum Parse_Define_Type : uint32
 {
     Parse_Define_Struct = Bit(uint32, 1),
     Parse_Define_Union = Bit(uint32, 2),
     Parse_Define_Enum = Bit(uint32, 3),
-    Parse_Define_Variable = Bit(uint32, 4),
+    Parse_Define_Argument = Bit(uint32, 4),
+    Parse_Define_Variable = Bit(uint32, 5),
 };
 
 struct Parser
@@ -77,34 +35,38 @@ struct Parser
     Scope_Statement *parse_scope_statement(int128 end_mask);
     Statement *parse_define_or_function_statement();
     Define_Statement *parse_define_statement(Type type, Token name, Parse_Define_Type define_type,
-                                             Define_Statement *previous);
-    uint64 parse_enum_value(Define_Statement *define_statement, Define_Statement *previous);
+                                             Define_Statement *previous, int128 end_mask);
+    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement, Parse_Define_Type define_type,
+                                                   int128 end_mask);
     Function_Statement *parse_function_statement(Type return_type, Token name);
 
     Record_Statement *parse_record_statement(Token keyword);
-    Record_Statement *parse_struct_statement(Token keyword);
     Scope_Statement *parse_record_scope_statement(Token keyword);
-    Record_Statement *parse_enum_statement();
 
     Expression *parse_boolean_expression();
-    Statement *parse_scope_or_expression_statement();
+    Scope_Statement *parse_flow_scope_statement();
     Condition_Statement *parse_condition_statement();
     While_Statement *parse_while_statement();
     For_Statement *parse_for_statement();
 
     Expression_Statement *parse_expression_statement();
     Expression *parse_expression(Expression *previous);
-    Comma_Expression *parse_comma_expression(Token token, Expression *lhs);
+    Comma_Expression *parse_comma_expression(Token token, Expression *expression);
+    Unary_Expression *parse_increment_expression(Token operation, Expression *previous);
     Unary_Expression *parse_unary_expression(Token operation, Expression_Order order, Expression *operand);
-    Binary_Expression *parse_binary_expression(Token operation, Expression *lhs, Expression *rhs);
+    Expression *parse_binary_expression(Token operation, Expression *lhs, Expression *rhs);
     Id_Expression *parse_id_expression(Token token);
     String_Expression *parse_string_expression(Token token);
     Int_Expression *parse_int_expression(Token token);
-    uint32 parse_int_flags(Token token, std::string_view suffix);
     Float_Expression *parse_float_expression(Token token);
+    Nested_Expression *parse_nested_expression(Token token);
+    Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
+    Expression *parse_assign_expression(Token token, Expression *variable_expression);
+    Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
+    Dot_Expression *parse_dot_expression(Token token, Expression *previous);
 
     int64 parse_constant(Token token, Expression *expression);
-
+    size_t parse_scope_stack(Scope_Statement *scope_statement);
     Scope_Statement *scope_in();
     bool is_eof() const;
     bool peek_until(int128 mask);
@@ -114,31 +76,7 @@ struct Parser
 
     Error errorf(std::string_view fmt, Token token, auto... args) const
     {
-        auto int_digits = [](int64 n) -> size_t {
-            size_t digits = 1;
-            for (; n > 9; n /= 10) {
-                digits++;
-            }
-            return digits;
-        };
-
-        // Generate code snippet
-        std::string_view src = scanner.src;
-        uint32 line_number = std::count(src.begin(), token.str.begin(), '\n');
-        auto rbegin = std::find(token.str.rend(), src.rend(), '\n');
-        auto begin = std::max(rbegin.base(), src.begin());
-        auto end = std::find(token.str.end(), src.end(), '\n');
-        std::string desc = fmt::format(fmt::runtime(fmt), args...);
-        uint32 cursor = token.str.begin() - begin + int_digits(line_number);
-
-        return Error{
-            "parser error",
-            fmt::format(R"(with {{
-  {} | {}
-      {:>{}}{:^>{}} {}
-}})",
-                        line_number, std::string_view{begin, end}, "", cursor, "^", token.str.size(), desc),
-        };
+        return Error{"parser error", make_source_snippet(scanner.source, token, fmt, args...)};
     }
 };
 

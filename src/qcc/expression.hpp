@@ -20,6 +20,9 @@ enum Expression_Kind : uint32
     Expression_Float = Bit(uint32, 7),
     Expression_Id = Bit(uint32, 8),
     Expression_Nested = Bit(uint32, 10),
+    Expression_Assign = Bit(uint32, 11),
+    Expression_Cast = Bit(uint32, 12),
+    Expression_Dot = Bit(uint32, 13),
 };
 
 enum Expression_Order : uint32
@@ -39,6 +42,7 @@ struct Unary_Expression : Expression
     Token operation;
     Expression *operand;
     Expression_Order order;
+    Type *type;
 
     Expression_Kind kind() const override
     {
@@ -51,6 +55,7 @@ struct Binary_Expression : Expression
     Token operation;
     Expression *lhs;
     Expression *rhs;
+    Type *type;
 
     Expression_Kind kind() const override
     {
@@ -61,6 +66,7 @@ struct Binary_Expression : Expression
 struct Invoke_Expression : Expression
 {
     Function *function;
+    Define_Statement *arguments;
 
     Expression_Kind kind() const override
     {
@@ -70,8 +76,8 @@ struct Invoke_Expression : Expression
 
 struct Comma_Expression : Expression
 {
-    Expression *lhs;
-    Expression *rhs;
+    Expression *expression;
+    Expression *next;
 
     Expression_Kind kind() const override
     {
@@ -151,13 +157,47 @@ struct Id_Expression : Expression
 struct Nested_Expression : Expression
 {
     Expression *operand;
-    
 
     Expression_Kind kind() const override
     {
         return Expression_Nested;
     }
-}
+};
+
+struct Assign_Expression : Expression
+{
+    Variable *variable;
+    Expression *operand;
+
+    Expression_Kind kind() const override
+    {
+        return Expression_Assign;
+    }
+};
+
+struct Cast_Expression : Expression
+{
+    Type *from;
+    Type *into;
+    Expression *expression;
+
+    Expression_Kind kind() const override
+    {
+        return Expression_Cast;
+    }
+};
+
+struct Dot_Expression : Expression
+{
+    Variable *from;
+    Variable *member;
+    
+    Expression_Kind kind() const override
+    {
+        return Expression_Dot;
+    }
+    
+};
 
 } // namespace qcc
 

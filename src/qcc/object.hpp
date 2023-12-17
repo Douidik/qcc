@@ -13,8 +13,6 @@ enum Object_Kind : uint32
     Object_Variable = Bit(uint32, 1),
     Object_Typedef = Bit(uint32, 2),
     Object_Record = Bit(uint32, 3),
-    Object_Struct_Member = Bit(uint32, 4),
-    Object_Enum_Member = Bit(uint32, 5),
 };
 
 struct Object
@@ -27,9 +25,11 @@ struct Object
 
 struct Function : Object
 {
-    Define_Statement *parameters;
+    Define_Statement *arguments;
     Type return_type;
-
+    size_t stack_size;
+    bool is_main;
+    
     Object_Kind kind() const override
     {
         return Object_Function;
@@ -39,7 +39,8 @@ struct Function : Object
 struct Variable : Object
 {
     Type type;
-
+    size_t address;
+    
     union {
 	int64 offset;
 	int64 constant;

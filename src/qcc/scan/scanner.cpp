@@ -3,9 +3,9 @@
 namespace qcc
 {
 
-Scanner::Scanner(std::string_view src, Syntax_Map &map) : src(src), next(src), map(map) {}
+Scanner::Scanner(std::string_view src, Syntax_Map &map) : source(src), next(src), map(map) {}
 
-Token Scanner::tokenize()
+Token Scanner::tokenize(int128 skip_mask)
 {
     Token token = {};
 
@@ -19,17 +19,22 @@ Token Scanner::tokenize()
                 next = match.next();
                 token.str = match.view();
                 token.type = type;
+                token.type_str = token_type_str(token.type);
+
+                if (!token.type) {
+                    throw errorf("unrecognized token", token);
+                }
                 break;
             }
         }
-    } while (token.type & (Token_Blank | Token_Comment));
+    } while (token.type & skip_mask);
 
     return token;
 }
 
 Token Scanner::dummy_token(Token_Type type) const
 {
-    return Token{std::string_view{&src.back(), 1}, type, true};
+    return Token{std::string_view{&source.back(), 1}, type, true};
 }
 
 } // namespace qcc

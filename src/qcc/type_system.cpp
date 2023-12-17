@@ -1,5 +1,4 @@
 #include "type_system.hpp"
-#include "ast.hpp"
 #include "expression.hpp"
 #include "object.hpp"
 #include "statement.hpp"
@@ -9,41 +8,30 @@
 namespace qcc
 {
 
-Struct_Member::~Struct_Member()
-{
-    delete next;
-}
-
-Enum_Member::~Enum_Member()
-{
-    delete next;
-}
-
 void Type_System::init()
 {
     void_type.kind = Type_Void;
     void_type.size = 0;
-}
-
-Type *Type_System::object_type(Object *object)
-{
-    switch (object->kind()) {
-    case Object_Variable:
-        return &((Variable *)object)->type;
-    case Object_Typedef:
-        return &((Typedef *)object)->type;
-    default:
-        return &void_type;
-    }
+    int_type.kind = Type_Int;
+    int_type.size = 4;
+    int_type.mods = Type_Signed;
+    float_type.kind = Type_Float;
+    float_type.size = 4;
+    double_type.kind = Type_Double;
+    double_type.size = 8;
 }
 
 Type *Type_System::expression_type(Expression *expression)
 {
     switch (expression->kind()) {
     case Expression_Unary:
-        return expression_type(((Unary_Expression *)expression)->operand);
+        return ((Unary_Expression *)expression)->type;
     case Expression_Binary:
-        return expression_type(((Binary_Expression *)expression)->lhs);
+        return ((Binary_Expression *)expression)->type;
+    case Expression_Cast:
+        return ((Cast_Expression *)expression)->into;
+    case Expression_Assign:
+        return &((Assign_Expression *)expression)->variable->type;
     case Expression_Invoke:
         return &((Invoke_Expression *)expression)->function->return_type;
     case Expression_Ternary:
@@ -52,9 +40,101 @@ Type *Type_System::expression_type(Expression *expression)
         return &((Int_Expression *)expression)->type;
     case Expression_Float:
         return &((Float_Expression *)expression)->type;
-    default:
-        return &void_type;
+    case Expression_Id: {
+        Id_Expression *id_expression = (Id_Expression *)expression;
+        return &((Variable *)id_expression->object)->type;
     }
+    case Expression_Comma: {
+        Comma_Expression *comma_expression = (Comma_Expression *)expression;
+        return expression_type(comma_expression->next);
+    }
+    case Expression_Nested: {
+        Nested_Expression *nested_expression = (Nested_Expression *)expression;
+        return expression_type(nested_expression->operand);
+    }
+    default:
+        qcc_assert("expression_type() does not support expression", 0);
+        return NULL;
+    }
+}
+
+int32 Type_System::expression_precedence(Expression *expression)
+{
+    if (expression->kind() & Expression_Unary) {
+        Unary_Expression *unary_expression = (Unary_Expression *)expression;
+        switch (unary_expression->operation.type) {
+        case Token_Increment:
+        case Token_Decrement:
+            if (unary_expression->order == Expression_Rhs)
+                return 1;
+            if (unary_expression->order == Expression_Lhs)
+                return 2;
+        case Token_Add:
+        case Token_Sub:
+        case Token_Not:
+        case Token_Bin_Not:
+        case Token_Deref:
+        case Token_Address:
+        case Token_Sizeof:
+            return 2;
+        default:
+            break;
+        }
+    }
+
+    if (expression->kind() & Expression_Binary) {
+        Binary_Expression *binary_expression = (Binary_Expression *)expression;
+        switch (binary_expression->operation.type) {
+        case Token_Mul:
+        case Token_Div:
+        case Token_Mod:
+            return 3;
+        case Token_Add:
+        case Token_Sub:
+            return 4;
+        case Token_Shift_L:
+        case Token_Shift_R:
+            return 5;
+        case Token_Greater:
+        case Token_Greater_Eq:
+        case Token_Less:
+        case Token_Less_Eq:
+            return 6;
+        case Token_Not_Eq:
+        case Token_Eq:
+            return 7;
+        case Token_Bin_And:
+            return 8;
+        case Token_Bin_Xor:
+            return 9;
+        case Token_Bin_Or:
+            return 10;
+        case Token_And:
+            return 11;
+        case Token_Or:
+            return 12;
+        case Token_Assign:
+        case Token_Add_Assign:
+        case Token_Sub_Assign:
+        case Token_Mul_Assign:
+        case Token_Div_Assign:
+        case Token_Mod_Assign:
+        case Token_Shift_L_Assign:
+        case Token_Shift_R_Assign:
+        case Token_Bin_And_Assign:
+        case Token_Bin_Xor_Assign:
+        case Token_Bin_Or_Assign:
+            return 14;
+        default:
+            break;
+        }
+    }
+
+    if (expression->kind() & Expression_Comma) {
+        return 15;
+    }
+    qcc_assert("expression_precedence() not defined", 0);
+    return -1;
 }
 
 uint32 Type_System::cast(Type *from, Type *into)
@@ -75,15 +155,15 @@ uint32 Type_System::cast(Type *from, Type *into)
         if (return_type_cast & Type_Cast_Error)
             return Type_Cast_Error;
 
-        Define_Statement *from_parameter = from_function->parameters;
-        Define_Statement *into_parameter = into_function->parameters;
+        Define_Statement *from_parameter = from_function->arguments;
+        Define_Statement *into_parameter = into_function->arguments;
         uint32 worst_parameter_cast = Type_Cast_Same;
 
         while (from_parameter and into_parameter) {
             if (from_parameter != NULL ^ into_parameter != NULL)
                 return Type_Cast_Error;
-            Type *from_parameter_type = &from_parameter->type;
-            Type *into_parameter_type = &into_parameter->type;
+            Type *from_parameter_type = &from_parameter->variable->type;
+            Type *into_parameter_type = &into_parameter->variable->type;
             worst_parameter_cast |= cast(from_parameter_type, into_parameter_type);
 
             from_parameter = from_parameter->next;
@@ -91,7 +171,6 @@ uint32 Type_System::cast(Type *from, Type *into)
         }
         return worst_parameter_cast;
     }
-
     case Type_Union:
     case Type_Struct: {
         // TODO! struct type cast
@@ -167,7 +246,7 @@ uint32 Type_System::cast(Type *from, Type *into)
     return Type_Cast_Error;
 }
 
-int64 Type_System::scalar_size(Type_Kind kind, uint32 mods)
+size_t Type_System::scalar_size(Type_Kind kind, uint32 mods)
 {
     if (kind & Type_Char)
         return 1;
@@ -186,26 +265,25 @@ int64 Type_System::scalar_size(Type_Kind kind, uint32 mods)
     return -1;
 }
 
-int64 Type_System::struct_size(Type *type)
+size_t Type_System::struct_size(Type *type)
 {
     qcc_assert("type is not a struct or an union", type->kind & (Type_Struct | Type_Union));
 
     int64 size = 0;
     for (Object *object : std::views::values(type->scope->objects)) {
-        qcc_assert("non-member object in struct declaration", object->kind() & Object_Struct_Member);
-        Struct_Member *member = (Struct_Member *)object;
-        size += member->type.size;
+        qcc_assert("non-member object in struct declaration", object->kind() & Object_Variable);
+        size += ((Variable *)object)->type.size;
     }
 
     return size;
 }
 
-Type *Type_System::copy(Type *destination, Type *source)
+Type *Type_System::merge(Type *destination, Type *source)
 {
     destination->kind = source->kind;
     destination->size = source->size;
-    destination->mods = source->mods;
     destination->data = source->data;
+    destination->mods |= source->mods;
     return destination;
 }
 

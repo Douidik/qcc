@@ -13,6 +13,7 @@ struct Token
     std::string_view str;
     Token_Type type;
     bool ok;
+    std::string_view type_str;
 };
 
 enum Token_Type : int128
@@ -74,49 +75,94 @@ enum Token_Type : int128
     Token_Paren_End = Bit(int128, 48),
     Token_Crochet_Begin = Bit(int128, 49),
     Token_Crochet_End = Bit(int128, 50),
-    Token_Assign = Bit(int128, 51),
-    Token_Not = Bit(int128, 52),
-    Token_And = Bit(int128, 53),
-    Token_Or = Bit(int128, 54),
-    Token_Add = Bit(int128, 55),
-    Token_Sub = Bit(int128, 56),
+    Token_Not = Bit(int128, 51),
+    Token_And = Bit(int128, 52),
+    Token_Or = Bit(int128, 53),
+    Token_Add = Bit(int128, 54),
+    Token_Sub = Bit(int128, 55),
     Token_Mul = Token_Star,
-    Token_Div = Bit(int128, 57),
-    Token_Mod = Bit(int128, 58),
+    Token_Div = Bit(int128, 56),
+    Token_Mod = Bit(int128, 57),
 
-    Token_Bin_Not = Bit(int128, 59),
+    Token_Assign = Bit(int128, 58),
+    Token_Add_Assign = Bit(int128, 59),
+    Token_Sub_Assign = Bit(int128, 60),
+    Token_Mul_Assign = Bit(int128, 61),
+    Token_Div_Assign = Bit(int128, 62),
+    Token_Mod_Assign = Bit(int128, 63),
+    Token_Shift_L_Assign = Bit(int128, 64),
+    Token_Shift_R_Assign = Bit(int128, 65),
+    Token_Bin_And_Assign = Bit(int128, 66),
+    Token_Bin_Xor_Assign = Bit(int128, 67),
+    Token_Bin_Or_Assign = Bit(int128, 68),
+
+    Token_Bin_Not = Bit(int128, 69),
     Token_Bin_And = Token_Ampersand,
-    Token_Bin_Or = Bit(int128, 60),
-    Token_Bin_Xor = Bit(int128, 61),
-    Token_Shift_L = Bit(int128, 62),
-    Token_Shift_R = Bit(int128, 63),
+    Token_Bin_Or = Bit(int128, 70),
+    Token_Bin_Xor = Bit(int128, 71),
+    Token_Shift_L = Bit(int128, 72),
+    Token_Shift_R = Bit(int128, 73),
 
-    Token_Eq = Bit(int128, 64),
-    Token_Not_Eq = Bit(int128, 65),
-    Token_Less = Bit(int128, 66),
-    Token_Greater = Bit(int128, 67),
-    Token_Less_Eq = Bit(int128, 68),
-    Token_Greater_Eq = Bit(int128, 69),
+    Token_Eq = Bit(int128, 74),
+    Token_Not_Eq = Bit(int128, 75),
+    Token_Less = Bit(int128, 76),
+    Token_Greater = Bit(int128, 78),
+    Token_Less_Eq = Bit(int128, 79),
+    Token_Greater_Eq = Bit(int128, 80),
 
     Token_Deref = Token_Star,
     Token_Address = Token_Ampersand,
-    Token_Dot = Bit(int128, 72),
-    Token_Arrow = Bit(int128, 73),
-    Token_Comma = Bit(int128, 74),
-    Token_Colon = Bit(int128, 75),
-    Token_Semicolon = Bit(int128, 76),
+    Token_Dot = Bit(int128, 81),
+    Token_Arrow = Bit(int128, 82),
+    Token_Comma = Bit(int128, 83),
+    Token_Colon = Bit(int128, 84),
+    Token_Semicolon = Bit(int128, 85),
 
-    Token_Void_Type = Bit(int128, 77),
-    Token_Char_Type = Bit(int128, 78),
-    Token_Int_Type = Bit(int128, 79),
-    Token_Float_Type = Bit(int128, 80),
-    Token_Double_Type = Bit(int128, 81),
+    Token_Void_Type = Bit(int128, 86),
+    Token_Char_Type = Bit(int128, 87),
+    Token_Int_Type = Bit(int128, 88),
+    Token_Float_Type = Bit(int128, 89),
+    Token_Double_Type = Bit(int128, 90),
 
-    Token_Type_End = Bit(int128, 82),
+    Token_Merged = Bit(int128, 91),
+    Token_Type_End = Bit(int128, 92),
 };
+
+const int128 Token_Mask_Expression =
+    Token_Id | Token_Char | Token_String | Token_Int | Token_Int_Bin | Token_Int_Hex | Token_Float | Token_Increment |
+    Token_Decrement | Token_Add | Token_Sub | Token_Div | Token_Mod | Token_Not | Token_Bin_Not | Token_Bin_And |
+    Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R | Token_Eq | Token_Not_Eq | Token_Less |
+    Token_Less_Eq | Token_Greater | Token_Greater_Eq | Token_Paren_Begin | Token_Assign;
+
+const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;
+
+const int128 Token_Mask_Each = ~((int128)0);
+
+const int128 Token_Mask_Type = Token_Auto | Token_Long | Token_Short | Token_Volatile | Token_Const | Token_Extern |
+                               Token_Register | Token_Static | Token_Signed | Token_Unsigned | Token_Int_Type |
+                               Token_Char_Type | Token_Float_Type | Token_Double_Type | Token_Void_Type;
+
+const int128 Token_Mask_Type_Storage = Token_Const | Token_Volatile | Token_Register | Token_Static;
+const int128 Token_Mask_Fundamental =
+    Token_Int_Type | Token_Char_Type | Token_Float_Type | Token_Double_Type | Token_Void_Type;
+const int128 Token_Mask_Record = Token_Struct | Token_Union | Token_Enum;
+
+const int128 Token_Mask_Binary_Assign =
+    Token_Assign | Token_Add_Assign | Token_Sub_Assign | Token_Mul_Assign | Token_Div_Assign | Token_Mod_Assign |
+    Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign | Token_Bin_Xor_Assign | Token_Bin_Or_Assign;
+
+const int128 Token_Mask_Bin =
+    Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign | Token_Bin_Xor_Assign | Token_Bin_Or_Assign |
+
+    Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R;
 
 static Token operator|(Token lhs, Token rhs)
 {
+    if (!lhs.type)
+        return rhs;
+    if (!rhs.type)
+        return lhs;
+
     Token token = {};
 
     const char *begin = lhs.str.begin();
@@ -126,12 +172,12 @@ static Token operator|(Token lhs, Token rhs)
 
     return Token{
         std::string_view{std::min(begin, end), std::max(begin, end)},
-        Token_None,
+        Token_Merged,
         false,
     };
 }
 
-static Token operator|=(Token lhs, Token rhs)
+static Token operator|=(Token &lhs, Token &rhs)
 {
     return lhs = (lhs | rhs);
 }

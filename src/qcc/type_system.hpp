@@ -31,6 +31,7 @@ enum Type_Kind : uint32
     Type_Array = Bit(uint32, 8),
     Type_Function_Pointer = Bit(uint32, 9),
     Type_Void = Bit(uint32, 10),
+    Type_Kind_Each = Bit(uint32, 11) - 1,
     Type_Scalar = (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer),
     Type_Record = (Type_Struct | Type_Union | Type_Enum),
 };
@@ -82,6 +83,8 @@ constexpr Type_Kind token_to_type_kind(Token_Type type)
         return Type_Union;
     case Token_Enum:
         return Type_Enum;
+    case Token_Void_Type:
+        return Type_Void;
     default:
         return Type_Undefined;
     }
@@ -156,13 +159,15 @@ constexpr std::string_view type_storage_name(Type_Storage storage)
         return "static";
     case Type_Auto:
         return "auto";
+    default:
+	return "?";
     }
 }
 
 struct Type
 {
     Token token;
-    int64 size;
+    size_t size;
     Type_Kind kind;
     uint32 mods;
     uint32 cvr;
@@ -171,7 +176,7 @@ struct Type
     union {
         struct
         {
-	    Scope_Statement *scope;
+            Scope_Statement *scope;
             Function *function;
             Type *array_type;
             Type *enum_type;
@@ -181,39 +186,22 @@ struct Type
     };
 };
 
-// struct Struct_Member
-// {
-//     ~Struct_Member();
-
-//     Type type;
-//     Token name;
-//     size_t offset;
-//     Struct_Member *next;
-// };
-
-// struct Enum_Member
-// {
-//     ~Enum_Member();
-
-//     Type type;
-//     Token name;
-//     Int_Expression *expression;
-//     Enum_Member *next;
-// };
-
 struct Type_System
 {
     Type void_type;
-
+    Type int_type;
+    Type float_type;
+    Type double_type;
+    
     void init();
     Type *find_fundamental_type(Type_Kind kind, uint32 mods);
 
-    Type *object_type(Object *object);
     Type *expression_type(Expression *expression);
+    int32 expression_precedence(Expression *expression);
     uint32 cast(Type *from, Type *into);
-    int64 scalar_size(Type_Kind kind, uint32 mods);
-    int64 struct_size(Type *type);
-    Type *copy(Type *destination, Type *source);
+    size_t scalar_size(Type_Kind kind, uint32 mods);
+    size_t struct_size(Type *type);
+    Type *merge(Type *destination, Type *source);
     std::string name(Type *type);
 
     Error errorf(std::string_view fmt, auto... args) const

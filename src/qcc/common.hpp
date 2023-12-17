@@ -33,19 +33,15 @@ constexpr size_t npos = (size_t)-1;
 #define QCC_DEBUG
 #endif
 
-// #define qcc_assert(message, ...)                                                                           \
-//     do {                                                                                                   \
-//         if (!(__VA_ARGS__))                                                                                \
-//     } while (0)
-
-static void qcc_assert(std::string_view message, bool boolean,
+static inline void qcc_assert(std::string_view message, bool boolean,
                        std::source_location source_location = std::source_location::current())
 {
     [[unlikely]] if (!boolean) {
         std::string_view file = source_location.file_name();
         std::string_view function = source_location.function_name();
         uint32 line = source_location.line();
-        fmt::print(stderr, "internal qcc assertion failed ({}:{}:{}): {}", file, function, line, message);
+        fmt::print(stderr, "internal qcc assertion failed ({}:{}:{}): {}\n", file, function, line, message);
+	    abort();
     }
 }
 
