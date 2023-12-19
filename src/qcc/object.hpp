@@ -25,7 +25,7 @@ struct Object
 
 struct Function : Object
 {
-    Define_Statement *arguments;
+    Define_Statement *parameters;
     Type return_type;
     size_t stack_size;
     bool is_main;
@@ -40,11 +40,7 @@ struct Variable : Object
 {
     Type type;
     size_t address;
-    
-    union {
-	int64 offset;
-	int64 constant;
-    };
+    int64 constant;
 
     Object_Kind kind() const override
     {

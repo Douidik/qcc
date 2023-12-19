@@ -20,7 +20,6 @@ void X86::make()
 
 void X86::make_statement(Statement *statement)
 {
-    fmt::println(stream, "; new statement");
     switch (statement->kind()) {
     case Statement_Scope:
         return make_scope_statement((Scope_Statement *)statement);
@@ -36,8 +35,8 @@ void X86::make_statement(Statement *statement)
         return make_while_statement((While_Statement *)statement);
     case Statement_For:
         return make_for_statement((For_Statement *)statement);
-    case Statement_Jump:
-        return make_jump_statement((Jump_Statement *)statement);
+    case Statement_Return:
+        return make_return_statement((Return_Statement *)statement);
     default:
         break;
     }
@@ -61,22 +60,25 @@ void X86::make_function_statement(Function_Statement *function_statement)
     fmt::println(stream, "    push rbp");
     fmt::println(stream, "    mov rbp, rsp");
     fmt::println(stream, "    sub rsp, {}", function->stack_size);
-
+    
     if (function_statement->scope != NULL) {
         make_scope_statement(function_statement->scope);
     }
 
+    fmt::println(stream, "{}.return:", function->name.str);
 
     if (function->is_main) {
-	// Exit the program with the 'exit' syscode and return 0
-	fmt::println(stream, "    mov eax, 1");
-	fmt::println(stream, "    mov ebx, 0");
-	fmt::println(stream, "    int 128");
+        fmt::println(stream, "    mov rax, 1");
+        fmt::println(stream, "    pop rbx");
+        fmt::println(stream, "    mov rsp, rbp");
+        fmt::println(stream, "    pop rbp");
+        fmt::println(stream, "    int 128");
     } else {
-	fmt::println(stream, "    mov rsp, rbp");
-	fmt::println(stream, "    pop rbp");
-	fmt::println(stream, "    ret");
+        fmt::println(stream, "    mov rsp, rbp");
+        fmt::println(stream, "    pop rbp");
+        fmt::println(stream, "    ret");
     }
+    fmt::println(stream, "");
 }
 
 void X86::make_define_statement(Define_Statement *define_statement)
@@ -127,7 +129,12 @@ void X86::make_while_statement(While_Statement *while_statement)
 
 void X86::make_for_statement(For_Statement *for_statement) {}
 
-void X86::make_jump_statement(Jump_Statement *jump_statement) {}
+void X86::make_return_statement(Return_Statement *return_statement)
+{
+    if (return_statement->expression != NULL)
+	make_expression(return_statement->expression);
+    fmt::println(stream, "    jmp {}.return", return_statement->function->name.str);
+}
 
 void X86::make_expression(Expression *expression)
 {
@@ -142,6 +149,8 @@ void X86::make_expression(Expression *expression)
         return make_int_expression((Int_Expression *)expression);
     case Expression_Id:
         return make_id_expression((Id_Expression *)expression);
+    case Expression_Invoke:
+        return make_invoke_expression((Invoke_Expression *)expression);
     default:
         break;
     }
@@ -291,27 +300,41 @@ void X86::make_unary_expression(Unary_Expression *unary_expression)
     }
 }
 
+void X86::make_invoke_expression(Invoke_Expression *invoke_expression)
+{
+    Argument_Expression *argument_expression = invoke_expression->arguments;
+
+    for (; argument_expression != NULL; argument_expression = argument_expression->next) {
+	// parameter offset of 16 because:
+	// 8 (Return address)
+	// 8 (Stack base)
+        make_expression(argument_expression->expression);
+	make_variable_store(argument_expression->parameter, 16);
+    }
+    fmt::println(stream, "    call {}", invoke_expression->function->name.str);
+}
+
 void X86::make_assign_expression(Assign_Expression *assign_expression)
 {
     make_expression(assign_expression->operand);
     make_variable_store(assign_expression->variable);
 }
 
-void X86::make_variable_load(Variable *variable)
+void X86::make_variable_load(Variable *variable, size_t offset)
 {
-    fmt::println(stream, "    mov rax, [rbp - {}]", variable->address);
+    fmt::println(stream, "    mov rax, [rbp - {}]", variable->address + offset);
     switch (variable->type.size) {
     case 1:
-        fmt::println(stream, "    mov al, byte [rbp - {}]", variable->address);
+        fmt::println(stream, "    mov al, byte [rbp - {}]", variable->address + offset);
         break;
     case 2:
-        fmt::println(stream, "    mov ax, word [rbp - {}]", variable->address);
+        fmt::println(stream, "    mov ax, word [rbp - {}]", variable->address + offset);
         break;
     case 4:
-        fmt::println(stream, "    mov eax, dword [rbp - {}]", variable->address);
+        fmt::println(stream, "    mov eax, dword [rbp - {}]", variable->address + offset);
         break;
     case 8:
-        fmt::println(stream, "    mov rax, [rbp - {}]", variable->address);
+        fmt::println(stream, "    mov rax, [rbp - {}]", variable->address + offset);
         break;
     default:
         qcc_assert("x86 does not support register of this size", 0);
@@ -320,22 +343,22 @@ void X86::make_variable_load(Variable *variable)
     fmt::println(stream, "    push rax");
 }
 
-void X86::make_variable_store(Variable *variable)
+void X86::make_variable_store(Variable *variable, size_t offset)
 {
     fmt::println("    pop rdi");
 
     switch (variable->type.size) {
     case 1:
-        fmt::println(stream, "    mov byte [rbp - {}], dil", variable->address);
+        fmt::println(stream, "    mov byte [rbp - {}], dil", variable->address + offset);
         break;
     case 2:
-        fmt::println(stream, "    mov word [rbp - {}], di", variable->address);
+        fmt::println(stream, "    mov word [rbp - {}], di", variable->address + offset);
         break;
     case 4:
-        fmt::println(stream, "    mov dword [rbp - {}], edi", variable->address);
+        fmt::println(stream, "    mov dword [rbp - {}], edi", variable->address + offset);
         break;
     case 8:
-        fmt::println(stream, "    mov qword [rbp - {}], rdi", variable->address);
+        fmt::println(stream, "    mov qword [rbp - {}], rdi", variable->address + offset);
         break;
     default:
         qcc_assert("x86 does not support register of this size", 0);

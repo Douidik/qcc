@@ -155,8 +155,8 @@ uint32 Type_System::cast(Type *from, Type *into)
         if (return_type_cast & Type_Cast_Error)
             return Type_Cast_Error;
 
-        Define_Statement *from_parameter = from_function->arguments;
-        Define_Statement *into_parameter = into_function->arguments;
+        Define_Statement *from_parameter = from_function->parameters;
+        Define_Statement *into_parameter = into_function->parameters;
         uint32 worst_parameter_cast = Type_Cast_Same;
 
         while (from_parameter and into_parameter) {

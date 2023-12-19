@@ -18,17 +18,19 @@ struct X86 : Asm
     void make_condition_statement(Condition_Statement *condition_statement);
     void make_while_statement(While_Statement *while_statement);
     void make_for_statement(For_Statement *for_statement);
-    void make_jump_statement(Jump_Statement *jump_statement);
-
+    void make_return_statement(Return_Statement *return_statement);
+    
+    
     void make_expression(Expression *expression);
     void make_int_expression(Int_Expression *int_expression);
     void make_id_expression(Id_Expression *id_expression);
     void make_binary_expression(Binary_Expression *binary_expression);
     void make_unary_expression(Unary_Expression *unary_expression);
     void make_assign_expression(Assign_Expression *assign_expression);
-
-    void make_variable_load(Variable *variable);
-    void make_variable_store(Variable *variable);
+    void make_invoke_expression(Invoke_Expression *invoke_expression);
+    
+    void make_variable_load(Variable *variable, size_t offset = 0);
+    void make_variable_store(Variable *variable, size_t offset = 0);
 };
 
 // enum X86_Instruction_Mod : uint32

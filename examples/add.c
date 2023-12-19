@@ -1,6 +1,10 @@
+int add(int x, int y)
+{
+    int sum = x + y;
+    return sum;
+}
+
 int main(void)
 {
-    int x = 1, y = 2;
-    int z;
-    z = x + y;
+    return add(0x69, 0x420);
 }

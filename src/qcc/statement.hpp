@@ -21,12 +21,40 @@ enum Statement_Kind : uint32
     Statement_For = Bit(uint32, 6),
     Statement_Jump = Bit(uint32, 7),
     Statement_Record = Bit(uint32, 8),
+    Statement_Return = Bit(uint32, 9),
+    Statement_Kind_Each = Bit(uint32, 10) - 1,
 };
+
+constexpr std::string_view statement_kind_str(Statement_Kind kind)
+{
+    switch (kind) {
+    case Statement_Scope:
+        return "scope";
+    case Statement_Function:
+        return "function";
+    case Statement_Define:
+        return "define";
+    case Statement_Expression:
+        return "expression";
+    case Statement_Condition:
+        return "condition";
+    case Statement_While:
+        return "while";
+    case Statement_For:
+        return "for";
+    case Statement_Jump:
+        return "jump";
+    case Statement_Record:
+        return "record";
+    case Statement_Return:
+        return "return";
+    default:
+        return "?";
+    }
+}
 
 struct Statement
 {
-    Token token;
-
     virtual ~Statement() = default;
     virtual Statement_Kind kind() const = 0;
 };
@@ -37,7 +65,6 @@ struct Scope_Statement : Statement
     std::vector<Statement *> body;
     std::unordered_map<std::string_view, Object *> objects;
     std::unordered_map<std::string_view, Record *> records;
-
     Object *object(std::string_view name);
     Record *record(Type_Kind kind, std::string_view name);
 
@@ -131,6 +158,17 @@ struct Record_Statement : Statement
     Statement_Kind kind() const override
     {
         return Statement_Record;
+    }
+};
+
+struct Return_Statement : Statement
+{
+    Expression *expression;
+    Function *function;
+
+    Statement_Kind kind() const override
+    {
+        return Statement_Return;
     }
 };
 

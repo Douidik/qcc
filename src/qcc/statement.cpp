@@ -1,6 +1,5 @@
 #include "statement.hpp"
 #include "object.hpp"
-#include <algorithm>
 
 namespace qcc
 {

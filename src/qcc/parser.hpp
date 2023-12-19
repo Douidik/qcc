@@ -14,7 +14,7 @@ enum Parse_Define_Type : uint32
     Parse_Define_Struct = Bit(uint32, 1),
     Parse_Define_Union = Bit(uint32, 2),
     Parse_Define_Enum = Bit(uint32, 3),
-    Parse_Define_Argument = Bit(uint32, 4),
+    Parse_Define_Parameter = Bit(uint32, 4),
     Parse_Define_Variable = Bit(uint32, 5),
 };
 
@@ -24,7 +24,7 @@ struct Parser
     Scanner &scanner;
     Type_System &type_system;
     std::deque<Token> token_queue;
-    std::deque<Scope_Statement *> stack;
+    std::deque<Statement *> context;
 
     Parser(Ast &ast, Scanner &scanner);
 
@@ -32,26 +32,30 @@ struct Parser
     Statement *parse_statement();
     Type parse_type();
 
-    Scope_Statement *parse_scope_statement(int128 end_mask);
     Statement *parse_define_or_function_statement();
     Define_Statement *parse_define_statement(Type type, Token name, Parse_Define_Type define_type,
                                              Define_Statement *previous, int128 end_mask);
-    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement, Parse_Define_Type define_type,
-                                                   int128 end_mask);
+    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement,
+                                                   Parse_Define_Type define_type, int128 end_mask);
     Function_Statement *parse_function_statement(Type return_type, Token name);
+    Scope_Statement *parse_scope_statement(Scope_Statement *scope_statement, uint32 statement_mask,
+                                           int128 end_mask);
 
     Record_Statement *parse_record_statement(Token keyword);
-    Scope_Statement *parse_record_scope_statement(Token keyword);
+    Scope_Statement *parse_struct_scope_statement(Token keyword);
+    Scope_Statement *parse_enum_scope_statement();
 
     Expression *parse_boolean_expression();
     Scope_Statement *parse_flow_scope_statement();
     Condition_Statement *parse_condition_statement();
     While_Statement *parse_while_statement();
     For_Statement *parse_for_statement();
+    Return_Statement *parse_return_statement();
 
     Expression_Statement *parse_expression_statement();
     Expression *parse_expression(Expression *previous);
     Comma_Expression *parse_comma_expression(Token token, Expression *expression);
+    Comma_Expression *parse_comma_node_expression(Token token, Expression *expression);
     Unary_Expression *parse_increment_expression(Token operation, Expression *previous);
     Unary_Expression *parse_unary_expression(Token operation, Expression_Order order, Expression *operand);
     Expression *parse_binary_expression(Token operation, Expression *lhs, Expression *rhs);
@@ -60,16 +64,22 @@ struct Parser
     Int_Expression *parse_int_expression(Token token);
     Float_Expression *parse_float_expression(Token token);
     Nested_Expression *parse_nested_expression(Token token);
+    Argument_Expression *parse_argument_expression(Token token, Function *function,
+                                                   Define_Statement *parameter);
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
     Expression *parse_assign_expression(Token token, Expression *variable_expression);
     Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
 
+    void parse_scope_stack(std::vector<Variable *> &stack, Scope_Statement *scope_statement);
+    void parse_function_stack(Function_Statement *function_statement);
+
+    Scope_Statement *context_scope();
+    Statement *context_of(uint32 statement_mask);
     int64 parse_constant(Token token, Expression *expression);
-    size_t parse_scope_stack(Scope_Statement *scope_statement);
-    Scope_Statement *scope_in();
+
     bool is_eof() const;
-    bool peek_until(int128 mask);
+    Token peek_until(int128 mask);
     Token peek(int128 mask);
     Token scan(int128 mask);
     Token expect(int128 mask, std::string_view context);

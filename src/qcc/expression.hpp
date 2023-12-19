@@ -12,13 +12,14 @@ enum Expression_Kind : uint32
 {
     Expression_Unary = Bit(uint32, 0),
     Expression_Binary = Bit(uint32, 1),
-    Expression_Invoke = Bit(uint32, 2),
-    Expression_Comma = Bit(uint32, 3),
-    Expression_Ternary = Bit(uint32, 4),
-    Expression_String = Bit(uint32, 5),
-    Expression_Int = Bit(uint32, 6),
-    Expression_Float = Bit(uint32, 7),
-    Expression_Id = Bit(uint32, 8),
+    Expression_Argument = Bit(uint32, 2),
+    Expression_Invoke = Bit(uint32, 3),
+    Expression_Comma = Bit(uint32, 4),
+    Expression_Ternary = Bit(uint32, 5),
+    Expression_String = Bit(uint32, 6),
+    Expression_Int = Bit(uint32, 7),
+    Expression_Float = Bit(uint32, 8),
+    Expression_Id = Bit(uint32, 9),
     Expression_Nested = Bit(uint32, 10),
     Expression_Assign = Bit(uint32, 11),
     Expression_Cast = Bit(uint32, 12),
@@ -63,10 +64,22 @@ struct Binary_Expression : Expression
     }
 };
 
+struct Argument_Expression : Expression
+{
+    Expression *expression;
+    Variable *parameter;
+    Argument_Expression *next;
+
+    Expression_Kind kind() const override
+    {
+        return Expression_Argument;
+    }
+};
+
 struct Invoke_Expression : Expression
 {
     Function *function;
-    Define_Statement *arguments;
+    Argument_Expression *arguments;
 
     Expression_Kind kind() const override
     {
@@ -191,12 +204,11 @@ struct Dot_Expression : Expression
 {
     Variable *from;
     Variable *member;
-    
+
     Expression_Kind kind() const override
     {
         return Expression_Dot;
     }
-    
 };
 
 } // namespace qcc
