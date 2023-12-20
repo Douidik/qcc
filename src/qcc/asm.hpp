@@ -2,6 +2,7 @@
 #define QCC_ASM_HPP
 
 #include "fwd.hpp"
+#include "allocator.hpp"
 #include <fmt/format.h>
 #include <ostream>
 
@@ -28,12 +29,12 @@ struct Label
 struct Asm
 {
     Ast &ast;
-    Type_System &type_system;
+    Allocator &allocator;
     std::ostream &stream;
     std::string_view source;
     uint32 label_count;
 
-    Asm(Ast &ast, std::string_view source, std::ostream &stream);
+    Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream);
     Label make_label(Label_Type type);
     virtual void make() = 0;
 };

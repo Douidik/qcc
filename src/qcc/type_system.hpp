@@ -34,6 +34,8 @@ enum Type_Kind : uint32
     Type_Kind_Each = Bit(uint32, 11) - 1,
     Type_Scalar = (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer),
     Type_Record = (Type_Struct | Type_Union | Type_Enum),
+    Type_Gpr = (Type_Char | Type_Int | Type_Pointer),
+    Type_Fpr = (Type_Double | Type_Float),
 };
 
 constexpr std::string_view type_kind_name(Type_Kind kind)

@@ -33,17 +33,27 @@ constexpr size_t npos = (size_t)-1;
 #define QCC_DEBUG
 #endif
 
-static inline void qcc_assert(std::string_view message, bool boolean,
-                       std::source_location source_location = std::source_location::current())
+static inline void qcc_assert(std::string_view message, bool boolean)
 {
-    [[unlikely]] if (!boolean) {
-        std::string_view file = source_location.file_name();
-        std::string_view function = source_location.function_name();
-        uint32 line = source_location.line();
-        fmt::print(stderr, "internal qcc assertion failed ({}:{}:{}): {}\n", file, function, line, message);
-	    abort();
+    [[unlikely]] if (!boolean)
+    {
+        fmt::print(stderr, "internal qcc assertion failed: {}\n", message);
+        abort();
     }
 }
+
+// static inline void qcc_assert(std::string_view message, bool boolean,
+//                        std::source_location source_location = std::source_location::current())
+// {
+//     [[unlikely]] if (!boolean) {
+//         std::string_view file = source_location.file_name();
+//         std::string_view function = source_location.function_name();
+//         uint32 line = source_location.line();
+//         fmt::print(stderr, "internal qcc assertion failed ({}:{}:{}): {}\n", file, function, line,
+//         message);
+// 	    abort();
+//     }
+// }
 
 #define Bit(type, n) ((type)1 << n)
 

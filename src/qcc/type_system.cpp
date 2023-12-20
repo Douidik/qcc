@@ -250,18 +250,19 @@ size_t Type_System::scalar_size(Type_Kind kind, uint32 mods)
 {
     if (kind & Type_Char)
         return 1;
-    if (kind & Type_Int and !mods)
-        return 4;
     if (kind & Type_Int and mods & Type_Short)
         return 2;
     if (kind & Type_Int and mods & Type_Long)
         return 8;
+    if (kind & Type_Int)
+        return 4;
     if (kind & Type_Float)
         return 4;
     if (kind & Type_Double)
         return 8;
     if (kind & Type_Pointer)
         return 8;
+    qcc_assert("cannot size scalar", 0);
     return -1;
 }
 

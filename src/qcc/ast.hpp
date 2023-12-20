@@ -19,7 +19,8 @@ struct Ast
     ~Ast();
     Variable *decode_designated_expression(Expression *expression);
     Expression *search_designated_expression(Expression *expression);
-
+    void each_expression_of(Expression *expression, uint32 mask, std::vector<Expression *> &data);
+ 
     template <typename T, typename D = std::decay_t<T>>
     T *push(T *value)
     {
@@ -32,7 +33,7 @@ struct Ast
         if constexpr (std::is_base_of_v<Object, D>) {
             return (T *)objects.emplace_back(value);
         }
-	return NULL;
+        return NULL;
     }
 };
 

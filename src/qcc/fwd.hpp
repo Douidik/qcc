@@ -11,6 +11,7 @@ struct Type_System;
 struct Type;
 
 enum Statement_Kind : uint32;
+enum Define_Type : uint32;
 struct Statement;
 struct Scope_Statement;
 struct Function_Statement;

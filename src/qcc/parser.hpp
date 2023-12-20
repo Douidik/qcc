@@ -9,15 +9,6 @@
 namespace qcc
 {
 
-enum Parse_Define_Type : uint32
-{
-    Parse_Define_Struct = Bit(uint32, 1),
-    Parse_Define_Union = Bit(uint32, 2),
-    Parse_Define_Enum = Bit(uint32, 3),
-    Parse_Define_Parameter = Bit(uint32, 4),
-    Parse_Define_Variable = Bit(uint32, 5),
-};
-
 struct Parser
 {
     Ast &ast;
@@ -33,10 +24,10 @@ struct Parser
     Type parse_type();
 
     Statement *parse_define_or_function_statement();
-    Define_Statement *parse_define_statement(Type type, Token name, Parse_Define_Type define_type,
+    Define_Statement *parse_define_statement(Type type, Token name, Define_Type define_type,
                                              Define_Statement *previous, int128 end_mask);
     Define_Statement *parse_comma_define_statement(Define_Statement *define_statement,
-                                                   Parse_Define_Type define_type, int128 end_mask);
+                                                   Define_Type define_type, int128 end_mask);
     Function_Statement *parse_function_statement(Type return_type, Token name);
     Scope_Statement *parse_scope_statement(Scope_Statement *scope_statement, uint32 statement_mask,
                                            int128 end_mask);
@@ -65,13 +56,14 @@ struct Parser
     Float_Expression *parse_float_expression(Token token);
     Nested_Expression *parse_nested_expression(Token token);
     Argument_Expression *parse_argument_expression(Token token, Function *function,
+                                                   Argument_Expression *previous,
                                                    Define_Statement *parameter);
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
     Expression *parse_assign_expression(Token token, Expression *variable_expression);
     Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
 
-    void parse_scope_stack(std::vector<Variable *> &stack, Scope_Statement *scope_statement);
+    // void parse_scope_stack(std::vector<Variable *> &stack, Scope_Statement *scope_statement);
     void parse_function_stack(Function_Statement *function_statement);
 
     Scope_Statement *context_scope();

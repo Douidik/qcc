@@ -85,12 +85,23 @@ struct Function_Statement : Statement
     }
 };
 
+enum Define_Type : uint32
+{
+    Define_Struct = Bit(uint32, 1),
+    Define_Union = Bit(uint32, 2),
+    Define_Enum = Bit(uint32, 3),
+    Define_Parameter = Bit(uint32, 4),
+    Define_Variable = Bit(uint32, 5),
+};
+
 struct Define_Statement : Statement
 {
     Expression *expression;
     Variable *variable;
+    Define_Type type;
     Define_Statement *next;
-
+    
+    
     Statement_Kind kind() const override
     {
         return Statement_Define;

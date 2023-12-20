@@ -6,5 +6,5 @@ int add(int x, int y)
 
 int main(void)
 {
-    return add(0x69, 0x420);
+    return add(9, 60);
 }

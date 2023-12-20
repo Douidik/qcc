@@ -3,6 +3,7 @@
 
 #include "fwd.hpp"
 #include "type_system.hpp"
+#include <vector>
 
 namespace qcc
 {
@@ -26,6 +27,7 @@ struct Object
 struct Function : Object
 {
     Define_Statement *parameters;
+    std::vector<Variable *> locals;
     Type return_type;
     size_t stack_size;
     bool is_main;
@@ -36,11 +38,26 @@ struct Function : Object
     }
 };
 
+enum Source_Type : uint32
+{
+    Source_None = 0,
+    Source_Stack = Bit(uint32, 1),
+    Source_Gpr = Bit(uint32, 2),
+    Source_Fpr = Bit(uint32, 3),
+};
+
 struct Variable : Object
 {
     Type type;
-    size_t address;
     int64 constant;
+    Source_Type source;
+
+    union {
+	int64 gpr;
+	int64 fpr;
+	int64 stack_offset;
+	int64 data_offset;
+    };
 
     Object_Kind kind() const override
     {

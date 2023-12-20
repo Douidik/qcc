@@ -68,6 +68,7 @@ struct Argument_Expression : Expression
 {
     Expression *expression;
     Variable *parameter;
+    Argument_Expression *previous;
     Argument_Expression *next;
 
     Expression_Kind kind() const override
@@ -80,6 +81,7 @@ struct Invoke_Expression : Expression
 {
     Function *function;
     Argument_Expression *arguments;
+    uint32 use_time; // used for save used registers when invoking
 
     Expression_Kind kind() const override
     {
