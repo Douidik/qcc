@@ -129,32 +129,36 @@ enum Token_Type : int128
 };
 
 const int128 Token_Mask_Expression =
-    Token_Id | Token_Char | Token_String | Token_Int | Token_Int_Bin | Token_Int_Hex | Token_Float | Token_Increment |
-    Token_Decrement | Token_Add | Token_Sub | Token_Div | Token_Mod | Token_Not | Token_Bin_Not | Token_Bin_And |
-    Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R | Token_Eq | Token_Not_Eq | Token_Less |
-    Token_Less_Eq | Token_Greater | Token_Greater_Eq | Token_Paren_Begin | Token_Assign;
+    Token_Id | Token_Char | Token_String | Token_Int | Token_Int_Bin | Token_Int_Hex | Token_Float |
+    Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul | Token_Div | Token_Mod | Token_Not |
+    Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R | Token_Eq |
+    Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq | Token_Paren_Begin |
+    Token_Assign | Token_Dot | Token_Deref;
 
 const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;
 
 const int128 Token_Mask_Each = ~((int128)0);
 
-const int128 Token_Mask_Type = Token_Auto | Token_Long | Token_Short | Token_Volatile | Token_Const | Token_Extern |
-                               Token_Register | Token_Static | Token_Signed | Token_Unsigned | Token_Int_Type |
-                               Token_Char_Type | Token_Float_Type | Token_Double_Type | Token_Void_Type;
+const int128 Token_Mask_Type = Token_Auto | Token_Long | Token_Short | Token_Volatile | Token_Const |
+                               Token_Extern | Token_Register | Token_Static | Token_Signed | Token_Unsigned |
+                               Token_Int_Type | Token_Char_Type | Token_Float_Type | Token_Double_Type |
+                               Token_Void_Type | Token_Struct | Token_Union | Token_Enum;
 
-const int128 Token_Mask_Type_Storage = Token_Const | Token_Volatile | Token_Register | Token_Static;
+const int128 Token_Mask_Type_Cvr = Token_Const | Token_Volatile | Token_Restrict;
+const int128 Token_Mask_Type_Storage = Token_Extern | Token_Register | Token_Static | Token_Auto;
 const int128 Token_Mask_Fundamental =
     Token_Int_Type | Token_Char_Type | Token_Float_Type | Token_Double_Type | Token_Void_Type;
+
 const int128 Token_Mask_Record = Token_Struct | Token_Union | Token_Enum;
 
-const int128 Token_Mask_Binary_Assign =
-    Token_Assign | Token_Add_Assign | Token_Sub_Assign | Token_Mul_Assign | Token_Div_Assign | Token_Mod_Assign |
-    Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign | Token_Bin_Xor_Assign | Token_Bin_Or_Assign;
+const int128 Token_Mask_Binary_Assign = Token_Assign | Token_Add_Assign | Token_Sub_Assign |
+                                        Token_Mul_Assign | Token_Div_Assign | Token_Mod_Assign |
+                                        Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
+                                        Token_Bin_Xor_Assign | Token_Bin_Or_Assign;
 
-const int128 Token_Mask_Bin =
-    Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign | Token_Bin_Xor_Assign | Token_Bin_Or_Assign |
-
-    Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R;
+const int128 Token_Mask_Bin = Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
+                              Token_Bin_Xor_Assign | Token_Bin_Or_Assign | Token_Bin_Not | Token_Bin_And |
+                              Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R;
 
 static Token operator|(Token lhs, Token rhs)
 {

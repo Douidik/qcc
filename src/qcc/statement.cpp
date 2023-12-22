@@ -3,7 +3,7 @@
 
 namespace qcc
 {
-
+    
 Object *Scope_Statement::object(std::string_view name)
 {
     if (objects.contains(name))

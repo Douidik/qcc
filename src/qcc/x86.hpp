@@ -2,6 +2,7 @@
 #define QCC_X86_HPP
 
 #include "asm.hpp"
+#include "source.hpp"
 #include <array>
 
 namespace qcc
@@ -29,13 +30,16 @@ struct X86 : Asm
     void make_id_expression(Id_Expression *id_expression, const X86_Register &regs);
     void make_binary_expression(Binary_Expression *binary_expression, const X86_Register &regs);
     void make_unary_expression(Unary_Expression *unary_expression, const X86_Register &regs);
-    void make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs);
     void make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs);
+    void make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs);
+    void make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs);
+    void make_address_expression(Address_Expression *address_expression, const X86_Register &regs);
 
-    void make_variable_push(Variable *variable);
-    void make_variable_pop(Variable *variable);
-    void make_variable_get(Variable *variable, const X86_Register &regs);
-    void make_variable_set(Variable *variable, const X86_Register &regs);
+    void make_source(Source *source, int64 size);
+    void make_variable_push(Object *object);
+    void make_variable_pop(Object *object);
+    void make_variable_get(Object *object, const X86_Register &regs);
+    void make_variable_set(Object *object, const X86_Register &regs);
 };
 
 } // namespace qcc

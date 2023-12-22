@@ -13,7 +13,7 @@ struct Parser
 {
     Ast &ast;
     Scanner &scanner;
-    Type_System &type_system;
+    Type_System type_system;
     std::deque<Token> token_queue;
     std::deque<Statement *> context;
 
@@ -21,23 +21,26 @@ struct Parser
 
     Statement *parse();
     Statement *parse_statement();
+    void parse_type_cvr(Type *type, Token token, bool is_pointer_type);
     Type parse_type();
+    Type parse_pointer_type(Type pointed_type);
 
     Statement *parse_define_or_function_statement();
-    Define_Statement *parse_define_statement(Type type, Token name, Define_Type define_type,
+    Define_Statement *parse_define_statement(Type type, Token name, Define_Mode mode,
                                              Define_Statement *previous, int128 end_mask);
-    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement,
-                                                   Define_Type define_type, int128 end_mask);
+    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement, Define_Mode mode,
+                                                   int128 end_mask);
     Function_Statement *parse_function_statement(Type return_type, Token name);
     Scope_Statement *parse_scope_statement(Scope_Statement *scope_statement, uint32 statement_mask,
                                            int128 end_mask);
 
+    Type struct_deep_copy(Type *source);
     Record_Statement *parse_record_statement(Token keyword);
     Scope_Statement *parse_struct_scope_statement(Token keyword);
-    Scope_Statement *parse_enum_scope_statement();
+    Scope_Statement *parse_enum_scope_statement(Token keyword, Type *enum_type);
 
     Expression *parse_boolean_expression();
-    Scope_Statement *parse_flow_scope_statement();
+    Scope_Statement *parse_maybe_inlined_scope_statement();
     Condition_Statement *parse_condition_statement();
     While_Statement *parse_while_statement();
     For_Statement *parse_for_statement();
@@ -56,15 +59,21 @@ struct Parser
     Float_Expression *parse_float_expression(Token token);
     Nested_Expression *parse_nested_expression(Token token);
     Argument_Expression *parse_argument_expression(Token token, Function *function,
-                                                   Argument_Expression *previous,
                                                    Define_Statement *parameter);
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
-    Expression *parse_assign_expression(Token token, Expression *variable_expression);
     Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
+    Deref_Expression *parse_deref_expression(Token token, Expression *operand);
+    Address_Expression *parse_address_expression(Token token, Expression *operand);
 
-    // void parse_scope_stack(std::vector<Variable *> &stack, Scope_Statement *scope_statement);
-    void parse_function_stack(Function_Statement *function_statement);
+    Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
+    Assign_Expression *parse_designated_assign_expression(Token token, Variable *variable,
+                                                          Expression *expression);
+    Assign_Expression *parse_scalar_copy_expression(Token token, Variable *variable, Expression *expression);
+    Assign_Expression *parse_struct_copy_expression(Token token, Variable *variable, Expression *expression);
+    Assign_Expression *parse_array_copy_expression(Token token, Variable *variable, Expression *expression);
+
+    Expression *cast_if_needed(Token token, Expression *expression, Type *type);
 
     Scope_Statement *context_scope();
     Statement *context_of(uint32 statement_mask);

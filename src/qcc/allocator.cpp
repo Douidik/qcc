@@ -3,6 +3,7 @@
 #include "expression.hpp"
 #include "object.hpp"
 #include "statement.hpp"
+#include <ranges>
 
 namespace qcc
 {
@@ -18,9 +19,11 @@ void Allocator::allocate()
 
     for (uint32 use_time = 0; use_time < uses_timeline.size(); use_time++) {
         for (Variable *variable : uses_timeline[use_time]) {
-            if (use_time == uses_range[variable].begin)
+            Use_Range use_range = uses_range[variable];
+
+            if (use_time == use_range.begin)
                 parse_begin_of_use(variable);
-            if (use_time == uses_range[variable].end)
+            if (use_time == use_range.end)
                 parse_end_of_use(variable);
         }
     }
@@ -47,7 +50,8 @@ void Allocator::allocate()
     //         break;
     //     }
 
-    //     fmt::println("'{}' ({}: {}) [{} - {}]", variable->name.str, source_typename, variable->stack_offset,
+    //     fmt::println("'{}' ({}: {}) [{} - {}]", variable->name.str, source_typename,
+    //     variable->stack_offset,
     //                  use_range.begin, use_range.end);
     // }
 }
@@ -58,30 +62,63 @@ void Allocator::parse_function_stack(Function_Statement *function_statement)
         return;
 
     Function *function = function_statement->function;
-    size_t offset = 0;
-    size_t alignment = 0;
+    size_t offset;
+    size_t alignment;
 
-    for (Variable *variable : function->locals) {
-        if (variable->source & Source_Stack) {
-            alignment = std::max(alignment, variable->type.size);
+    const auto on_stack = [](Variable *variable) -> bool {
+        return variable->source & Source_Stack;
+    };
+    const auto stack_push = [](Variable *variable, int64 offset, int64 alignment) {
+        int64 align_up = (offset + alignment - 1) & !(alignment);
+        int64 size = variable->type.size;
+        int64 address = 0;
+
+        if (offset + size > align_up) {
+            // Snap the address to the alignment
+            address = align_up + alignment + size;
+        } else {
+            address = offset + size;
         }
-    }
-    for (Variable *variable : function->locals) {
-        if (variable->source & Source_Stack) {
-            // Snap the offset to the alignment
-            size_t aligned = (offset / alignment) * alignment;
-            if (offset + variable->type.size > aligned + alignment)
-                variable->stack_offset = aligned + alignment + variable->type.size;
-            else
-                variable->stack_offset = offset + variable->type.size;
-            offset = variable->stack_offset;
+
+        if (variable->mode & Define_Parameter) {
+            // __cdecl function: parameters are at the top of the invoker function
+            // we offset by 16 because we pushed the return address and the bsp
+            variable->address = +(address + 16);
+        } else {
+            variable->address = -(address);
         }
+
+        offset = variable->address;
+    };
+
+    offset = 0, alignment = 0;
+    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
+        alignment = std::max(alignment, parameter->variable->type.size);
     }
+    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
+        stack_push(parameter->variable, offset, alignment);
+    }
+    function->invoke_size = offset;
+
+    offset = 0, alignment = 0;
+    for (Variable *variable : function->locals | views::filter(on_stack)) {
+        alignment = std::max(alignment, variable->type.size);
+    }
+    for (Variable *variable : function->locals | views::filter(on_stack)) {
+        stack_push(variable, offset, alignment);
+    }
+
     function->stack_size = offset;
 }
 
 void Allocator::parse_begin_of_use(Variable *variable)
 {
+    if (variable->source != Source_None) {
+        return;
+    }
+    if (variable->type.kind & (Type_Struct | Type_Union)) {
+        variable->source = Source_Stack;
+    }
     if (variable->type.kind & Type_Gpr and gpr_count != 0) {
         variable->source = Source_Gpr, variable->gpr = gpr_count--;
     }
@@ -106,7 +143,7 @@ void Allocator::parse_end_of_use(Variable *variable)
 void Allocator::parse_new_use(Variable *variable)
 {
     if (variable->type.kind & Type_Void)
-	return;
+        return;
 
     if (uses_range.contains(variable)) {
         for (uint32 use_time = uses_range[variable].end; use_time < uses_timeline.size(); use_time++) {
@@ -167,10 +204,12 @@ void Allocator::parse_statement_use_ranges(Statement *statement)
         Define_Statement *define_statement = (Define_Statement *)statement;
 
         for (; define_statement != NULL; define_statement = define_statement->next) {
-            if (define_statement->type & Define_Parameter or define_statement->expression != NULL)
-                parse_new_use(define_statement->variable);
-	    if (define_statement->expression != NULL)
-		parse_expression_use_ranges(define_statement->expression);
+            Variable *variable = define_statement->variable;
+
+            if (variable->mode & Define_Parameter or define_statement->expression != NULL)
+                parse_new_use(variable);
+            if (define_statement->expression != NULL)
+                parse_expression_use_ranges(define_statement->expression);
         }
         break;
     }
@@ -205,13 +244,14 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
     case Expression_Argument: {
         Argument_Expression *argument_expression = (Argument_Expression *)expression;
         parse_expression_use_ranges(argument_expression->expression);
+	if (argument_expression->next != NULL)
+	    parse_expression_use_ranges(argument_expression->next);
         break;
     }
 
     case Expression_Invoke: {
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
-	if (uses_timeline.size() != 0)
-	    invoke_expression->use_time = uses_timeline.size();
+	invoke_expression->use_time = uses_timeline.size();
         parse_expression_use_ranges(invoke_expression->arguments);
         break;
     }
@@ -252,7 +292,24 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
-        parse_new_use(dot_expression->from);
+        parse_new_use(dot_expression->record);
+        parse_new_use(dot_expression->member);
+        break;
+    }
+
+    case Expression_Deref: {
+        Deref_Expression *deref_expression = (Deref_Expression *)expression;
+        if (deref_expression->object->kind() & Object_Variable) {
+            parse_new_use((Variable *)deref_expression->object);
+        }
+        break;
+    }
+
+    case Expression_Address: {
+        Address_Expression *address_expression = (Address_Expression *)expression;
+        if (address_expression->object->kind() & Object_Variable) {
+            parse_new_use((Variable *)address_expression->object);
+        }
         break;
     }
 

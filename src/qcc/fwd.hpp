@@ -11,7 +11,6 @@ struct Type_System;
 struct Type;
 
 enum Statement_Kind : uint32;
-enum Define_Type : uint32;
 struct Statement;
 struct Scope_Statement;
 struct Function_Statement;
@@ -40,15 +39,21 @@ struct Nested_Expression;
 struct Assign_Expression;
 struct Cast_Expression;
 struct Dot_Expression;
+struct Deref_Expression;
+struct Address_Expression;
 
 enum Object_Kind : uint32;
 enum Type_Mod : uint32;
 enum Type_Storage : uint32;
+enum Define_Mode : uint32;
 struct Object;
 struct Function;
 struct Variable;
 struct Typedef;
 struct Record;
+
+enum Source_Location : uint32;
+struct Source;
 
 } // namespace qcc
 

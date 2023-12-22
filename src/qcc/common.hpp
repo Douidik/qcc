@@ -4,10 +4,14 @@
 #include "error.hpp"
 #include <cstdint>
 #include <fmt/core.h>
+#include <ranges>
 #include <source_location>
 
 namespace qcc
 {
+
+namespace views = std::views;
+namespace ranges = std::ranges;
 
 typedef uint32_t uint;
 typedef uint8_t uint8;
@@ -35,8 +39,7 @@ constexpr size_t npos = (size_t)-1;
 
 static inline void qcc_assert(std::string_view message, bool boolean)
 {
-    [[unlikely]] if (!boolean)
-    {
+    [[unlikely]] if (!boolean) {
         fmt::print(stderr, "internal qcc assertion failed: {}\n", message);
         abort();
     }

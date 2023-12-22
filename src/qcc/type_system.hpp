@@ -4,6 +4,7 @@
 #include "fwd.hpp"
 #include "scan/token.hpp"
 #include <fmt/core.h>
+#include <vector>
 
 namespace qcc
 {
@@ -34,7 +35,7 @@ enum Type_Kind : uint32
     Type_Kind_Each = Bit(uint32, 11) - 1,
     Type_Scalar = (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer),
     Type_Record = (Type_Struct | Type_Union | Type_Enum),
-    Type_Gpr = (Type_Char | Type_Int | Type_Pointer),
+    Type_Gpr = (Type_Char | Type_Int | Type_Pointer | Type_Enum),
     Type_Fpr = (Type_Double | Type_Float),
 };
 
@@ -162,7 +163,7 @@ constexpr std::string_view type_storage_name(Type_Storage storage)
     case Type_Auto:
         return "auto";
     default:
-	return "?";
+        return "?";
     }
 }
 
@@ -176,34 +177,34 @@ struct Type
     Type_Storage storage;
 
     union {
-        struct
-        {
-            Scope_Statement *scope;
-            Function *function;
-            Type *array_type;
-            Type *enum_type;
-            Type *pointed_type;
-        };
+        Scope_Statement *scope;
+        Type *pointed_type;
+        Function *function;
+        Type *array_type;
+        Type *enum_type;
         void *data;
     };
+
+    Type *base();
 };
 
 struct Type_System
 {
-    Type void_type;
-    Type int_type;
-    Type float_type;
-    Type double_type;
-    
-    void init();
-    Type *find_fundamental_type(Type_Kind kind, uint32 mods);
+    const Type void_type = {{}, 0, Type_Void};
+    const Type int_type = {{}, 4, Type_Int, Type_Signed};
+    const Type char_type = {{}, 1, Type_Char, 0};
+    const Type float_type = {{}, 4, Type_Float};
+    const Type double_type = {{}, 8, Type_Double};
+    std::vector<Type *> orphan_types;
 
+    Type *find_fundamental_type(Type_Kind kind, uint32 mods);
     Type *expression_type(Expression *expression);
     int32 expression_precedence(Expression *expression);
     uint32 cast(Type *from, Type *into);
     size_t scalar_size(Type_Kind kind, uint32 mods);
     size_t struct_size(Type *type);
     Type *merge(Type *destination, Type *source);
+    Type *orphan_type_push(Type *type);
     std::string name(Type *type);
 
     Error errorf(std::string_view fmt, auto... args) const

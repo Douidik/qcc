@@ -16,26 +16,52 @@ Ast::~Ast()
         delete object;
 }
 
-Variable *Ast::decode_designated_expression(Expression *expression)
+Object *Ast::decode_designated_expression(Expression *expression)
 {
-    Id_Expression *id_expression = (Id_Expression *)search_designated_expression(expression);
-    if (!id_expression or id_expression->kind() != Expression_Id)
+    Expression *designated = search_designated_expression(expression);
+    if (!designated)
         return NULL;
-    if (id_expression->object->kind() != Object_Variable)
+
+    switch (designated->kind()) {
+    case Expression_Id: {
+        Id_Expression *id_expression = (Id_Expression *)designated;
+        return id_expression->object;
+    }
+
+    case Expression_Dot: {
+        Dot_Expression *dot_expression = (Dot_Expression *)designated;
+        return dot_expression->member;
+    }
+
+    case Expression_Deref: {
+        Deref_Expression *deref_expression = (Deref_Expression *)designated;
+        return deref_expression->object;
+    }
+
+    case Expression_Address: {
+        Address_Expression *address_expression = (Address_Expression *)designated;
+        return address_expression->object;
+    }
+
+    default:
+        qcc_assert("decode_designated_expression() unexpected expression of type", 0);
         return NULL;
-    return (Variable *)id_expression->object;
+    }
 }
 
 Expression *Ast::search_designated_expression(Expression *expression)
 {
     Expression *designated = NULL;
 
-    // NOTE: do not implement cast expression even inferred ones
     switch (expression->kind()) {
     case Expression_Id:
+    case Expression_Dot:
+    case Expression_Deref:
+    case Expression_Address:
         designated = expression;
         break;
 
+	
     case Expression_Unary: {
         Unary_Expression *unary_expression = (Unary_Expression *)expression;
         if (unary_expression->operation.type & (Token_Increment | Token_Decrement)) {

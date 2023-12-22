@@ -4,7 +4,6 @@
 #include "object.hpp"
 #include "statement.hpp"
 #include <fmt/ostream.h>
-#include <ranges>
 
 namespace qcc
 {
@@ -25,13 +24,13 @@ const X86_Register Rdi = Make_Register("rdi", "edi", "di", "dil");
 const X86_Register Rsp = Make_Register("rsp", "esp", "sp", "spl");
 
 const X86_Register(Gpr[8]) = {
-    Make_Register("r8", "r8d", "r8w", "r8b"),     Make_Register("r9", "r9d", "r9w", "r9b"),
-    Make_Register("r10", "r10d", "r10w", "r10b"), Make_Register("r11", "r11d", "r11w", "r11b"),
-    Make_Register("r12", "r12d", "r12w", "r12b"), Make_Register("r13", "r13d", "r13w", "r13b"),
-    Make_Register("r14", "r14d", "r14w", "r14b"), Make_Register("r15", "r15d", "r15w", "r15b"),
+    Make_Register("r15", "r15d", "r15w", "r15b"), Make_Register("r14", "r14d", "r14w", "r14b"),
+    Make_Register("r13", "r13d", "r13w", "r13b"), Make_Register("r12", "r12d", "r12w", "r12b"),
+    Make_Register("r11", "r11d", "r11w", "r11b"), Make_Register("r10", "r10d", "r10w", "r10b"),
+    Make_Register("r9", "r9d", "r9w", "r9b"),     Make_Register("r8", "r8d", "r8w", "r8b"),
 };
 
-const X86_Specifier Specifier = Make_Specifier("qword", "dword", "word", "byte");
+const X86_Specifier Spec = Make_Specifier("qword", "dword", "word", "byte");
 
 X86::X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream) :
     Asm(ast, allocator, source, stream)
@@ -84,11 +83,13 @@ void X86::make_function_statement(Function_Statement *function_statement)
 
     Function *function = function_statement->function;
 
-    fmt::println(stream, "{}:", function->is_main ? "_start" : function->name.str);
+    if (function->is_main)
+        fmt::println(stream, "_start:");
+    fmt::println(stream, "{}:", function->name.str);
     fmt::println(stream, "    push rbp");
     fmt::println(stream, "    mov rbp, rsp");
     if (function->stack_size != 0)
-	fmt::println(stream, "    sub rsp, {}", function->stack_size);
+        fmt::println(stream, "    sub rsp, {}", function->stack_size);
 
     // __cdecl function fetch arguments from stack
     // from function(argument_0, ..., argument_n - 1, argument_n)
@@ -103,7 +104,7 @@ void X86::make_function_statement(Function_Statement *function_statement)
     size_t argument_offset = 16; // (rbp + return_address)
     for (; parameter_statement != NULL; parameter_statement = parameter_statement->next) {
         size_t size = parameter_statement->variable->type.size;
-        fmt::println(stream, "    mov {}, {} [rbp + {}]", Rax[size], Specifier[size], argument_offset);
+        fmt::println(stream, "    mov {}, {} [rbp + {}]", Rax[size], Spec[size], argument_offset);
         make_variable_set(parameter_statement->variable, Rax);
         argument_offset += 8;
     }
@@ -340,51 +341,86 @@ void X86::make_unary_expression(Unary_Expression *unary_expression, const X86_Re
 
 void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs)
 {
-    bool needs_register_save = invoke_expression->use_time < allocator.uses_timeline.size();
-    std::set<Variable *> *used_variables = NULL;
+    auto &uses_timeline = allocator.uses_timeline;
+    uint32 use_time = invoke_expression->use_time;
+    Function *function = invoke_expression->function;
 
-    if (needs_register_save) {
-        used_variables = &allocator.uses_timeline.at(invoke_expression->use_time);
-        for (Variable *variable : *used_variables) {
-            if (variable->source & (Type_Fpr | Type_Gpr))
-                make_variable_push(variable);
-        }
+    const auto on_register = [](Variable *variable) -> bool {
+        return variable->source & (Type_Gpr | Type_Fpr);
+    };
+
+    if (use_time < uses_timeline.size()) {
+        for (Variable *variable : uses_timeline[use_time] | views::filter(on_register))
+            make_variable_push(variable);
     }
 
-    // __cdecl function invoke: arguments are passed on the stack from right to left
-    // function(argument_0, argument_1, ..., argument_n)
-    // argument_0
-    // argument_1
-    // ...
-    // argument_n
-    // saved registers
     Argument_Expression *argument_expression = invoke_expression->arguments;
-    size_t argument_stack_size = 0;
-
-    for (; argument_expression->next != NULL; argument_expression = argument_expression->next) {
+    for (; argument_expression != NULL and argument_expression->next != NULL;
+         argument_expression = argument_expression->next) {
     }
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
-        size_t size = argument_expression->parameter->type.size;
         make_expression(argument_expression->expression, Rax);
-        fmt::println(stream, "    push rax");
-        argument_stack_size += 8;
+        fmt::println(stream, "    push {}", Rax[argument_expression->parameter->type.size]);
     }
 
-    fmt::println(stream, "    call {}", invoke_expression->function->name.str);
-    if (regs != Rdi) {
-        fmt::println(stream, "    mov {}, rdi", regs[8]);
-    }
-    if (argument_stack_size != 0) {
-        fmt::println(stream, "    sub rsp, {}", argument_stack_size);
+    fmt::println(stream, "    call {}", function->name.str);
+    if (function->invoke_size != 0) {
+        fmt::println(stream, "    sub rsp, {}", function->invoke_size);
     }
 
-    if (needs_register_save) {
-        for (Variable *variable : *used_variables | std::views::reverse) {
-            if (variable->source & (Type_Fpr | Type_Gpr))
-                make_variable_pop(variable);
-        }
+    if (use_time < uses_timeline.size()) {
+        for (Variable *variable : uses_timeline[use_time] | views::filter(on_register) | views::reverse)
+            make_variable_pop(variable);
     }
 }
+
+// void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs)
+// {
+//     bool needs_register_save = invoke_expression->use_time < allocator.uses_timeline.size();
+//     std::set<Variable *> *used_variables = NULL;
+
+//     if (needs_register_save) {
+//         used_variables = &allocator.uses_timeline.at(invoke_expression->use_time);
+//         for (Variable *variable : *used_variables) {
+//             if (variable->source & (Type_Fpr | Type_Gpr))
+//                 make_variable_push(variable);
+//         }
+//     }
+
+//     // __cdecl function invoke: arguments are passed on the stack from right to left
+//     // function(argument_0, argument_1, ..., argument_n)
+//     // argument_0
+//     // argument_1
+//     // ...
+//     // argument_n
+//     // saved registers
+//     Argument_Expression *argument_expression = invoke_expression->arguments;
+//     size_t argument_stack_size = 0;
+
+//     for (; argument_expression->next != NULL; argument_expression = argument_expression->next) {
+//     }
+//     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
+//         size_t size = argument_expression->parameter->type.size;
+//         make_expression(argument_expression->expression, Rax);
+//         fmt::println(stream, "    push rax");
+//         argument_stack_size += 8;
+//     }
+
+//     fmt::println(stream, "    call {}", invoke_expression->function->name.str);
+//     if (regs != Rdi) {
+//         fmt::println(stream, "    mov {}, rdi", regs[8]);
+//     }
+//     if (argument_stack_size != 0) {
+//         fmt::println(stream, "    sub rsp, {}", argument_stack_size);
+//     }
+
+//     if (needs_register_save) {
+//         for (Variable *variable : *used_variables | std::views::reverse) {
+//             if (variable->source & (Type_Fpr | Type_Gpr))
+//                 make_variable_pop(variable);
+//         }
+//     }
+// }
 
 void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs)
 {
@@ -392,70 +428,93 @@ void X86::make_assign_expression(Assign_Expression *assign_expression, const X86
     make_variable_set(assign_expression->variable, Rax);
 }
 
-void X86::make_variable_push(Variable *variable)
+void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs)
 {
-    size_t size = variable->type.size;
+    size_t size = deref_expression->type->size;
 
-    switch (variable->source) {
-    case Source_Stack:
-        fmt::println(stream, "    push {} [rbp - {}]", Specifier[size], variable->stack_offset);
+    switch (deref_expression->object->kind()) {
+    case Object_Variable: {
+        Variable *variable = (Variable *)deref_expression->object;
+
+        switch (variable->source) {
+        case Source_Stack:
+            fmt::println(stream, "mov {}, [rbp - {:+}]", regs[8], variable->address);
+            fmt::println(stream, "mov {}, [{}]", regs[8], regs[8]);
+            break;
+        default:
+            qcc_assert("TODO! make_deref_expression for this variable source type", 0);
+        }
         break;
-    case Source_Gpr:
-        fmt::println(stream, "    push {}", Gpr[variable->gpr][size]);
-        break;
+    }
     default:
-        qcc_assert("TODO! make_variable_push for this source type", 0);
+        qcc_assert("TODO! make_deref_expression for this object kind", 0);
     }
 }
 
-void X86::make_variable_pop(Variable *variable)
+void X86::make_address_expression(Address_Expression *address_expression, const X86_Register &regs)
 {
-    size_t size = variable->type.size;
+    switch (address_expression->object->kind()) {
+    case Object_Variable: {
+        Variable *variable = (Variable *)address_expression->object;
 
-    switch (variable->source) {
-    case Source_Stack:
-        fmt::println(stream, "    pop {} [rbp - {}]", Specifier[size], variable->stack_offset);
+        switch (variable->source) {
+        case Source_Stack:
+            fmt::println(stream, "lea {}, [rpb - {}]", regs[8], variable->address);
+            break;
+        default:
+            qcc_assert("TODO! make_address_expression for this variable source type", 0);
+        }
         break;
-    case Source_Gpr:
-        fmt::println(stream, "    pop {}", Gpr[variable->gpr][size]);
-        break;
+    }
     default:
-        qcc_assert("TODO! make_variable_pop for this source type", 0);
+        qcc_assert("TODO! make_address_expression for this object kind", 0);
     }
 }
 
-void X86::make_variable_get(Variable *variable, const X86_Register &regs)
+auto decode_variable_and_size(Object *object)
 {
-    size_t size = variable->type.size;
+    qcc_assert("object is not a variable", object->kind() & Object_Variable);
+    return std::make_tuple((Variable *)object, ((Variable *)object)->type.size);
+}
 
-    switch (variable->source) {
+void X86::make_source(Source *source, int64 size)
+{
+    switch (source->location) {
     case Source_Stack:
-        fmt::println(stream, "    mov {}, {} [rbp - {}]", regs[size], Specifier[size],
-                     variable->stack_offset);
+        fmt::print(stream, "{} [rbp {:+}]", Spec[size], source->address);
         break;
     case Source_Gpr:
-        fmt::println(stream, "    mov {}, {}", regs[size], Gpr[variable->gpr][size]);
+        fmt::print(stream, "{}", Gpr[variable->gpr][size]);
         break;
     default:
-        qcc_assert("TODO! make_variable_get for this source type", 0);
+        qcc_assert("TODO! make_source for this source type", 0);
     }
 }
 
-void X86::make_variable_set(Variable *variable, const X86_Register &regs)
+void X86::make_variable_push(Object *object)
 {
-    size_t size = variable->type.size;
+    auto [variable, size] = decode_variable_and_size(object);
+    fmt::print("    push"), make_source(variable, size), fmt::print("\n");
+}
 
-    switch (variable->source) {
-    case Source_Stack:
-        fmt::println(stream, "    mov {} [rbp - {}], {}", Specifier[size], variable->stack_offset,
-                     regs[size]);
-        break;
-    case Source_Gpr:
-        fmt::println(stream, "    mov {}, {}", Gpr[variable->gpr][size], regs[size]);
-        break;
-    default:
-        qcc_assert("TODO! make_variable_set for this source type", 0);
-    }
+void X86::make_variable_pop(Object *object)
+{
+    auto [variable, size] = decode_variable_and_size(object);
+    fmt::print("    pop"), make_source(variable, size), fmt::print("\n");
+}
+
+void X86::make_variable_get(Object *object, Source *source)
+{
+    auto [variable, size] = decode_variable_and_size(object);
+    fmt::print("    mov"), make_source(source, size);
+    fmt::print(", "), make_source(variable, size), fmt::print("\n");
+}
+
+void X86::make_variable_set(Object *object, Source *source)
+{
+    auto [variable, size] = decode_variable_and_size(object);
+    fmt::print("    mov"), make_source(variable, size);
+    fmt::print(", "), make_source(source, size), fmt::print("\n");
 }
 
 } // namespace qcc

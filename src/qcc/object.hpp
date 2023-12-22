@@ -2,6 +2,7 @@
 #define QCC_OBJECT_HPP
 
 #include "fwd.hpp"
+#include "source.hpp"
 #include "type_system.hpp"
 #include <vector>
 
@@ -22,6 +23,16 @@ struct Object
 
     virtual ~Object() = default;
     virtual Object_Kind kind() const = 0;
+
+    virtual bool has_assign() const
+    {
+        return false;
+    };
+
+    virtual bool has_address() const
+    {
+        return false;
+    };
 };
 
 struct Function : Object
@@ -29,39 +40,49 @@ struct Function : Object
     Define_Statement *parameters;
     std::vector<Variable *> locals;
     Type return_type;
+    size_t invoke_size;
     size_t stack_size;
     bool is_main;
-    
+
     Object_Kind kind() const override
     {
         return Object_Function;
     }
+
+    bool has_address() const override
+    {
+        return true;
+    };
 };
 
-enum Source_Type : uint32
+enum Define_Mode : uint32
 {
-    Source_None = 0,
-    Source_Stack = Bit(uint32, 1),
-    Source_Gpr = Bit(uint32, 2),
-    Source_Fpr = Bit(uint32, 3),
+    Define_Struct = Bit(uint32, 1),
+    Define_Union = Bit(uint32, 2),
+    Define_Enum = Bit(uint32, 3),
+    Define_Parameter = Bit(uint32, 4),
+    Define_Variable = Bit(uint32, 5),
 };
 
-struct Variable : Object
+struct Variable : Object, Source
 {
     Type type;
     int64 constant;
-    Source_Type source;
-
-    union {
-	int64 gpr;
-	int64 fpr;
-	int64 stack_offset;
-	int64 data_offset;
-    };
+    Define_Mode mode;
 
     Object_Kind kind() const override
     {
         return Object_Variable;
+    }
+
+    bool has_assign() const override
+    {
+        return !(type.cvr & Type_Const);
+    }
+
+    bool has_address() const override
+    {
+        return type.storage != Type_Register;
     }
 };
 

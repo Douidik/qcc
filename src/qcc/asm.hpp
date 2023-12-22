@@ -1,8 +1,8 @@
 #ifndef QCC_ASM_HPP
 #define QCC_ASM_HPP
 
-#include "fwd.hpp"
 #include "allocator.hpp"
+#include "fwd.hpp"
 #include <fmt/format.h>
 #include <ostream>
 
@@ -55,21 +55,24 @@ struct formatter<Label>
 
     constexpr std::string_view name(const Label &label) const
     {
-        if (label.type == Label_Return)
+        switch (label.type) {
+        case Label_Return:
             return "return";
-        if (label.type == Label_Ternary_Else)
-            return "else";
-        if (label.type == Label_Ternary_End)
+        case Label_Ternary_Else:
+            return "ternary_else";
+        case Label_Ternary_End:
             return "ternary_end";
-        if (label.type == Label_Continue)
+        case Label_Continue:
             return "continue";
-        if (label.type == Label_Break)
+        case Label_Break:
             return "break";
-        if (label.type == Label_Else)
+        case Label_Else:
             return "else";
-        if (label.type == Label_If_End)
+        case Label_If_End:
             return "if_end";
-        return "?";
+        default:
+            return "?";
+        }
     }
 
     template <typename F>

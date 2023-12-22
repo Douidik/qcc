@@ -8,17 +8,22 @@
 namespace qcc
 {
 
-void Type_System::init()
+Type *Type::base()
 {
-    void_type.kind = Type_Void;
-    void_type.size = 0;
-    int_type.kind = Type_Int;
-    int_type.size = 4;
-    int_type.mods = Type_Signed;
-    float_type.kind = Type_Float;
-    float_type.size = 4;
-    double_type.kind = Type_Double;
-    double_type.size = 8;
+    if (kind & Type_Array)
+        return array_type->base();
+    if (kind & Type_Pointer)
+        return pointed_type->base();
+    if (kind & Type_Enum)
+        return enum_type->base();
+    return this;
+}
+
+Type_System::~Type_System()
+{
+    for (Type *type : orphan_types) {
+        delete type;
+    }
 }
 
 Type *Type_System::expression_type(Expression *expression)
@@ -44,6 +49,10 @@ Type *Type_System::expression_type(Expression *expression)
         Id_Expression *id_expression = (Id_Expression *)expression;
         return &((Variable *)id_expression->object)->type;
     }
+    case Expression_Dot: {
+        Dot_Expression *dot_expression = (Dot_Expression *)expression;
+        return &dot_expression->member->type;
+    }
     case Expression_Comma: {
         Comma_Expression *comma_expression = (Comma_Expression *)expression;
         return expression_type(comma_expression->next);
@@ -52,6 +61,15 @@ Type *Type_System::expression_type(Expression *expression)
         Nested_Expression *nested_expression = (Nested_Expression *)expression;
         return expression_type(nested_expression->operand);
     }
+    case Expression_Address: {
+        Address_Expression *address_expression = (Address_Expression *)expression;
+        return &address_expression->type;
+    }
+    case Expression_Deref: {
+        Deref_Expression *deref_expression = (Deref_Expression *)expression;
+        return deref_expression->type;
+    }
+	
     default:
         qcc_assert("expression_type() does not support expression", 0);
         return NULL;
@@ -129,7 +147,7 @@ int32 Type_System::expression_precedence(Expression *expression)
             break;
         }
     }
-
+	
     if (expression->kind() & Expression_Comma) {
         return 15;
     }
@@ -279,6 +297,9 @@ size_t Type_System::struct_size(Type *type)
     return size;
 }
 
+Type Type_System::struct_copy(Type *type) {}
+
+
 Type *Type_System::merge(Type *destination, Type *source)
 {
     destination->kind = source->kind;
@@ -286,6 +307,11 @@ Type *Type_System::merge(Type *destination, Type *source)
     destination->data = source->data;
     destination->mods |= source->mods;
     return destination;
+}
+
+Type *Type_System::orphan_type_push(Type *type)
+{
+    return orphan_types.emplace_back(type);
 }
 
 std::string Type_System::name(Type *type)

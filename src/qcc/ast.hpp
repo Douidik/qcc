@@ -2,7 +2,6 @@
 #define QCC_AST_HPP
 
 #include "fwd.hpp"
-#include "type_system.hpp"
 #include <vector>
 
 namespace qcc
@@ -10,17 +9,16 @@ namespace qcc
 
 struct Ast
 {
-    Type_System type_system;
     std::vector<Statement *> statements;
     std::vector<Expression *> expressions;
     std::vector<Object *> objects;
     Scope_Statement *main_statement;
 
     ~Ast();
-    Variable *decode_designated_expression(Expression *expression);
+    Object *decode_designated_expression(Expression *expression);
     Expression *search_designated_expression(Expression *expression);
     void each_expression_of(Expression *expression, uint32 mask, std::vector<Expression *> &data);
- 
+
     template <typename T, typename D = std::decay_t<T>>
     T *push(T *value)
     {

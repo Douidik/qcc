@@ -24,6 +24,8 @@ enum Expression_Kind : uint32
     Expression_Assign = Bit(uint32, 11),
     Expression_Cast = Bit(uint32, 12),
     Expression_Dot = Bit(uint32, 13),
+    Expression_Deref = Bit(uint32, 14),
+    Expression_Address = Bit(uint32, 15),
 };
 
 enum Expression_Order : uint32
@@ -66,8 +68,7 @@ struct Binary_Expression : Expression
 
 struct Argument_Expression : Expression
 {
-    Expression *expression;
-    Variable *parameter;
+    Assign_Expression *assign_expression;
     Argument_Expression *previous;
     Argument_Expression *next;
 
@@ -81,7 +82,7 @@ struct Invoke_Expression : Expression
 {
     Function *function;
     Argument_Expression *arguments;
-    uint32 use_time; // used for save used registers when invoking
+    uint32 use_time;
 
     Expression_Kind kind() const override
     {
@@ -184,6 +185,10 @@ struct Assign_Expression : Expression
     Variable *variable;
     Expression *operand;
 
+    // used to break down structures into register assignments
+    // ',' after assignment are parsed as comma expressions
+    Assign_Expression *next;
+    
     Expression_Kind kind() const override
     {
         return Expression_Assign;
@@ -204,12 +209,35 @@ struct Cast_Expression : Expression
 
 struct Dot_Expression : Expression
 {
-    Variable *from;
+    Variable *record;
     Variable *member;
+    Type *type;
 
     Expression_Kind kind() const override
     {
         return Expression_Dot;
+    }
+};
+
+struct Deref_Expression : Expression
+{
+    Object *object;
+    Type *type;
+
+    Expression_Kind kind() const override
+    {
+        return Expression_Deref;
+    }
+};
+
+struct Address_Expression : Expression
+{
+    Object *object;
+    Type type;
+
+    Expression_Kind kind() const override
+    {
+        return Expression_Address;
     }
 };
 
