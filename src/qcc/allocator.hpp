@@ -25,10 +25,11 @@ struct Allocator
     Allocator(Ast &ast, uint32 gpr_count, uint32 fpr_count);
     void allocate();
 
-    void parse_function_stack(Function_Statement *function_statement);
+    int64 create_function_stack_push(Variable *variable, int64 offset, int64 alignment);
+    void create_function_stack(Function_Statement *function_statement);
     void parse_begin_of_use(Variable *variable);
     void parse_end_of_use(Variable *variable);
-    
+
     void parse_new_use(Variable *variable);
     void parse_statement_use_ranges(Statement *statement);
     void parse_expression_use_ranges(Expression *expression);

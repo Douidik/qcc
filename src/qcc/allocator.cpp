@@ -30,12 +30,12 @@ void Allocator::allocate()
 
     for (Statement *statement : ast.main_statement->body) {
         if (statement->kind() & Statement_Function)
-            parse_function_stack((Function_Statement *)statement);
+            create_function_stack((Function_Statement *)statement);
     }
 
     // for (auto [variable, use_range] : uses_range) {
     //     std::string_view source_typename = "";
-    //     switch (variable->source) {
+    //     switch (variable->location) {
     //     case Source_None:
     //         source_typename = "none";
     //         break;
@@ -56,7 +56,43 @@ void Allocator::allocate()
     // }
 }
 
-void Allocator::parse_function_stack(Function_Statement *function_statement)
+int64 Allocator::create_function_stack_push(Variable *variable, int64 offset, int64 alignment)
+{
+    int64 align_up = (offset + alignment - 1) & !(alignment);
+    int64 size = variable->type.size;
+    int64 address = 0;
+
+    if (offset + size > align_up) {
+        // Snap the address to the alignment
+        address = align_up + alignment + size;
+    } else {
+        address = offset + size;
+    }
+
+    if (variable->mode & Define_Parameter) {
+        // __cdecl function: parameters are at the top of the invoker function
+        // we offset by 16 because we pushed the return address and the bsp
+        variable->address = +(address + 16);
+    } else {
+        variable->address = -(address);
+    }
+
+
+    if (variable->type.kind & (Type_Struct | Type_Union)) {
+        for (auto &member : views::values(variable->type.struct_statement->members)) {
+	    create_function_stack_push(variable, offset, alignment);
+
+	    // Union does not have offset between members
+	    if (variable->type.kind & Type_Struct) {
+		offset += variable->type.size;
+	    }
+        }
+    }
+
+    return variable->address;
+}
+
+void Allocator::create_function_stack(Function_Statement *function_statement)
 {
     if (!function_statement->scope)
         return;
@@ -66,37 +102,15 @@ void Allocator::parse_function_stack(Function_Statement *function_statement)
     size_t alignment;
 
     const auto on_stack = [](Variable *variable) -> bool {
-        return variable->source & Source_Stack;
+        return variable->location & Source_Stack;
     };
-    const auto stack_push = [](Variable *variable, int64 offset, int64 alignment) {
-        int64 align_up = (offset + alignment - 1) & !(alignment);
-        int64 size = variable->type.size;
-        int64 address = 0;
-
-        if (offset + size > align_up) {
-            // Snap the address to the alignment
-            address = align_up + alignment + size;
-        } else {
-            address = offset + size;
-        }
-
-        if (variable->mode & Define_Parameter) {
-            // __cdecl function: parameters are at the top of the invoker function
-            // we offset by 16 because we pushed the return address and the bsp
-            variable->address = +(address + 16);
-        } else {
-            variable->address = -(address);
-        }
-
-        offset = variable->address;
-    };
-
+    
     offset = 0, alignment = 0;
     for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
         alignment = std::max(alignment, parameter->variable->type.size);
     }
     for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
-        stack_push(parameter->variable, offset, alignment);
+        offset = create_function_stack_push(parameter->variable, offset, alignment);
     }
     function->invoke_size = offset;
 
@@ -104,8 +118,8 @@ void Allocator::parse_function_stack(Function_Statement *function_statement)
     for (Variable *variable : function->locals | views::filter(on_stack)) {
         alignment = std::max(alignment, variable->type.size);
     }
-    for (Variable *variable : function->locals | views::filter(on_stack)) {
-        stack_push(variable, offset, alignment);
+    for (Variable *variable : function->locals | views::filter(on_stack)) { 
+        offset = create_function_stack_push(variable, offset, alignment);
     }
 
     function->stack_size = offset;
@@ -113,29 +127,29 @@ void Allocator::parse_function_stack(Function_Statement *function_statement)
 
 void Allocator::parse_begin_of_use(Variable *variable)
 {
-    if (variable->source != Source_None) {
+    if (variable->location != Source_None) {
         return;
     }
     if (variable->type.kind & (Type_Struct | Type_Union)) {
-        variable->source = Source_Stack;
+        variable->location = Source_Stack;
     }
     if (variable->type.kind & Type_Gpr and gpr_count != 0) {
-        variable->source = Source_Gpr, variable->gpr = gpr_count--;
+        variable->location = Source_Gpr, variable->gpr = gpr_count--;
     }
     if (variable->type.kind & Type_Fpr and fpr_count != 0) {
-        variable->source = Source_Fpr, variable->fpr = fpr_count--;
+        variable->location = Source_Fpr, variable->fpr = fpr_count--;
     }
-    if (!variable->source) {
-        variable->source = Source_Stack;
+    if (!variable->location) {
+        variable->location = Source_Stack;
     }
 }
 
 void Allocator::parse_end_of_use(Variable *variable)
 {
-    if (variable->source & Source_Gpr) {
+    if (variable->location & Source_Gpr) {
         gpr_count++;
     }
-    if (variable->source & Source_Fpr) {
+    if (variable->location & Source_Fpr) {
         fpr_count++;
     }
 }
@@ -243,15 +257,15 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Argument: {
         Argument_Expression *argument_expression = (Argument_Expression *)expression;
-        parse_expression_use_ranges(argument_expression->expression);
-	if (argument_expression->next != NULL)
-	    parse_expression_use_ranges(argument_expression->next);
+        parse_expression_use_ranges(argument_expression->assign_expression);
+        if (argument_expression->next != NULL)
+            parse_expression_use_ranges(argument_expression->next);
         break;
     }
 
     case Expression_Invoke: {
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
-	invoke_expression->use_time = uses_timeline.size();
+        invoke_expression->use_time = uses_timeline.size();
         parse_expression_use_ranges(invoke_expression->arguments);
         break;
     }
@@ -280,7 +294,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
     case Expression_Assign: {
         Assign_Expression *assign_expression = (Assign_Expression *)expression;
         parse_new_use(assign_expression->variable);
-        parse_expression_use_ranges(assign_expression->operand);
+        parse_expression_use_ranges(assign_expression->expression);
+        parse_expression_use_ranges(assign_expression->next);
         break;
     }
 

@@ -105,17 +105,24 @@ Type Parser::parse_type()
             Typedef *type_def = (Typedef *)context_scope()->object(token.str);
             if (!type_def or type_def->kind() != Object_Typedef)
                 throw errorf("undefined type", token);
-            type_system.merge(&type, &type_def->type);
+            type_system.merge_type(&type, &type_def->type);
             type_mods_allowed = false;
             mask &= ~Token_Id;
         }
 
-        else if (token.type & Token_Mask_Record) {
-            Record_Statement *record_statement = parse_record_statement(token);
-            type_system.merge(&type, record_statement->type);
+        else if (token.type & (Token_Struct | Token_Union)) {
+            Type struct_type = parse_struct_type(token);
+            type_system.merge_type(&type, &struct_type);
             type_mods_allowed = false;
             mask &= ~Token_Id;
         }
+
+        // else if (token.type & Token_Mask_Record) {
+        //     Record_Statement *record_statement = parse_record_statement(token);
+        //     type_system.merge_type(&type, record_statement->type);
+        //     type_mods_allowed = false;
+        //     mask &= ~Token_Id;
+        // }
 
         else if (token.type & Token_Pointer) {
             inside_pointer = true;
@@ -158,6 +165,59 @@ Type Parser::parse_pointer_type(Type pointed_type)
     }
 
     return scan(Token_Pointer).ok ? parse_pointer_type(type) : type;
+}
+
+Type Parser::parse_struct_type(Token keyword)
+{
+    Token name = scan(Token_Id);
+    Token scope_begin = scan(Token_Scope_Begin);
+    Type_Kind type_kind = token_to_type_kind(keyword.type);
+    Record *record = NULL;
+
+    if (name.ok) {
+        record = context_scope()->record(type_kind, name.str);
+    }
+    if (record != NULL and record->type.kind != type_kind) {
+        throw errorf("was previously defined as '{}'", keyword | name, type_kind_name(record->type.kind));
+    }
+    if (record != NULL and record->type.struct_statement != NULL and scope_begin.ok) {
+        throw errorf("redefinition of {} '{}'", keyword | name | scope_begin, keyword.str, name.str);
+    }
+    if (scope_begin.ok) {
+        record = ast.push(new Record{});
+        record->name = name;
+        record->type.token = name;
+        record->type.struct_statement = parse_struct_statement(keyword);
+        record->type.size = type_system.struct_size(&record->type);
+
+        context_scope()->records[name.str] = record;
+    }
+
+    return type_system.clone_type(ast, &record->type);
+}
+
+Struct_Statement *Parser::parse_struct_statement(Token keyword)
+{
+    Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
+    struct_statement->keyword = keyword;
+    struct_statement->hash = (uint64)struct_statement;
+    context.push_back(struct_statement);
+
+    Define_Mode define_mode = {};
+    if (keyword.type & Token_Struct)
+        define_mode = Define_Struct;
+    if (keyword.type & Token_Union)
+        define_mode = Define_Union;
+
+    while (!peek_until(Token_Scope_End).ok) {
+        Type type = parse_type();
+        Token name = scan(Token_Id);
+        parse_define_statement(type, name, define_mode, NULL, Token_Semicolon);
+    }
+
+    expect(Token_Scope_End, "after struct scope statement");
+    context.pop_back();
+    return struct_statement;
 }
 
 Statement *Parser::parse_statement()
@@ -206,15 +266,16 @@ Statement *Parser::parse_define_or_function_statement()
 Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_Mode mode,
                                                  Define_Statement *previous, int128 end_mask)
 {
+    if (!name.ok) {
+        expect(end_mask, "after empty define statement");
+        return NULL;
+    }
+
     Define_Statement *define_statement = ast.push(new Define_Statement{});
     Variable *variable = ast.push(new Variable{});
     define_statement->variable = variable;
     variable->mode = mode;
     variable->name = name;
-
-    if (type.kind & (Type_Struct | Type_Union)) {
-    }
-
     variable->type = type;
 
     if (type.kind & Type_Void) {
@@ -262,7 +323,13 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_M
         function_statement->function->locals.push_back(variable);
     }
 
-    context_scope()->objects.emplace(name.str, define_statement->variable);
+    if (mode & (Define_Struct | Define_Union)) {
+        Struct_Statement *struct_statement = (Struct_Statement *)context_of(Statement_Struct);
+        struct_statement->members[name.str] = define_statement->variable;
+    } else {
+        context_scope()->objects.emplace(name.str, define_statement->variable);
+    }
+
     define_statement->next = parse_comma_define_statement(define_statement, mode, end_mask);
     context.pop_back();
     return define_statement;
@@ -356,72 +423,48 @@ Scope_Statement *Parser::parse_scope_statement(Scope_Statement *scope_statement,
     return scope_statement;
 }
 
-Record_Statement *Parser::parse_record_statement(Token keyword)
-{
-    Record_Statement *record_statement = ast.push(new Record_Statement{});
-    context.push_back(record_statement);
+// Record_Statement *Parser::parse_record_statement(Token keyword)
+// {
+//     Record_Statement *record_statement = ast.push(new Record_Statement{});
+//     context.push_back(record_statement);
 
-    Token name = scan(Token_Id);
-    Type_Kind type_kind = token_to_type_kind(keyword.type);
-    Record *record = context_scope()->record(type_kind, name.str);
-    Token scope_begin = scan(Token_Scope_Begin);
+//     Token name = scan(Token_Id);
+//     Type_Kind type_kind = token_to_type_kind(keyword.type);
+//     Record *record = context_scope()->record(type_kind, name.str);
+//     Token scope_begin = scan(Token_Scope_Begin);
 
-    if (record != NULL and record->type.kind != type_kind) {
-        throw errorf("was previously defined as '{}'", keyword | name, keyword.str,
-                     type_kind_name(record->type.kind));
-    }
-    if (record != NULL and record->type.scope != NULL and scope_begin.ok) {
-        throw errorf("redefinition of {} '{}'", keyword | name | scope_begin, keyword.str, name.str);
-    }
-    if (scope_begin.ok) {
-        record = ast.push(new Record{});
-        Type *type = &record->type;
-        type->kind = token_to_type_kind(keyword.type);
+//     if (record != NULL and record->type.kind != type_kind) {
+//         throw errorf("was previously defined as '{}'", keyword | name, keyword.str,
+//                      type_kind_name(record->type.kind));
+//     }
+//     if (record != NULL and record->type.struct_statement != NULL and scope_begin.ok) {
+//         throw errorf("redefinition of {} '{}'", keyword | name | scope_begin, keyword.str, name.str);
+//     }
+//     if (scope_begin.ok) {
+//         record = ast.push(new Record{});
+//         Type *type = &record->type;
+//         type->kind = token_to_type_kind(keyword.type);
 
-        if (keyword.type & (Token_Struct | Token_Union)) {
-            type->scope = parse_struct_scope_statement(keyword);
-            type->size = type_system.struct_size(type);
-        }
-        if (keyword.type & (Token_Enum)) {
-            Type *enum_type = NULL;
-            type->scope = parse_enum_scope_statement(keyword, enum_type);
-            type->enum_type = enum_type;
-            type->size = type->enum_type->size;
-        }
+//         if (keyword.type & (Token_Struct | Token_Union)) {
+//             type->scope = parse_struct_scope_statement(keyword);
+//             type->size = type_system.struct_size(type);
+//         }
+//         if (keyword.type & (Token_Enum)) {
+//             Type *enum_type = NULL;
+//             type->scope = parse_enum_scope_statement(keyword, enum_type);
+//             type->enum_type = enum_type;
+//             type->size = type->enum_type->size;
+//         }
 
-        if (name.ok) {
-            context_scope()->records.emplace(name.str, record);
-        }
-    }
-    
-    record_statement->type = &record->type;
-    context.pop_back();
-    return record_statement;
-}
+//         if (name.ok) {
+//             context_scope()->records.emplace(name.str, record);
+//         }
+//     }
 
-Scope_Statement *Parser::parse_struct_scope_statement(Token keyword)
-{
-    Scope_Statement *scope_statement = ast.push(new Scope_Statement{});
-    scope_statement->owner = context_scope();
-    context.push_back(scope_statement);
-
-    while (!peek_until(Token_Scope_End).ok) {
-        Type type = parse_type();
-        Token name = scan(Token_Id);
-        Define_Mode mode = {};
-        if (keyword.type & Token_Struct)
-            mode = Define_Struct;
-        if (keyword.type & Token_Union)
-            mode = Define_Union;
-
-        Define_Statement *define_statement = parse_define_statement(type, name, mode, NULL, Token_Semicolon);
-        scope_statement->body.push_back(define_statement);
-    }
-
-    expect(Token_Scope_End, "after struct scope statement");
-    context.pop_back();
-    return scope_statement;
-}
+//     record_statement->type = &record->type;
+//     context.pop_back();
+//     return record_statement;
+// }
 
 Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_type)
 {
@@ -920,17 +963,17 @@ Invoke_Expression *Parser::parse_invoke_expression(Token token, Expression *prev
 
 Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs, Expression *rhs)
 {
-    Variable *variable = (Variable *)ast.decode_designated_expression(lhs);
-    if (!variable or variable->kind() != Object_Variable or !variable->has_assign()) {
+    Object *object = ast.decode_designated_expression(lhs);
+    if (!object or object->kind() != Object_Variable or !object->has_assign()) {
         throw errorf("cannot assign expression", token);
     }
-    return parse_designated_assign_expression(token, variable, rhs);
+
+    return parse_designated_assign_expression(token, (Variable *)object, rhs);
 }
 
 Assign_Expression *Parser::parse_designated_assign_expression(Token token, Variable *variable,
                                                               Expression *expression)
 {
-
     if (variable->type.kind & (Type_Struct | Type_Union)) {
         return parse_struct_copy_expression(token, variable, expression);
     }
@@ -941,50 +984,59 @@ Assign_Expression *Parser::parse_designated_assign_expression(Token token, Varia
         return parse_scalar_copy_expression(token, variable, expression);
     }
 
-    qcc_assert("parse_assign_expression_with_variable() not implement for this type", 0);
+    qcc_assert("parse_designated_assign_expression() not implemented for this type", 0);
+    return NULL;
 }
 
 Assign_Expression *Parser::parse_scalar_copy_expression(Token token, Variable *variable,
                                                         Expression *expression)
 {
     Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
-
-    assign_expression->operand = cast_if_needed(token, expression, &variable->type);
     assign_expression->variable = variable;
+    assign_expression->type = &assign_expression->variable->type;
+    assign_expression->expression = cast_if_needed(token, expression, assign_expression->type);
+
     return assign_expression;
 }
 
 Assign_Expression *Parser::parse_struct_copy_expression(Token token, Variable *variable,
                                                         Expression *expression)
 {
-    Variable *operand = (Variable *)ast.decode_designated_expression(expression);
-
-    if (!operand or operand->kind() != Object_Variable or operand->type.kind & ~(Type_Struct | Type_Union) or
-        variable->type.scope != operand->type.scope) {
-        std::string operand_typename = type_system.name(&operand->type);
-        throw errorf("cannot assign a struct to type '{}'", token, operand_typename);
+    Variable *expression_variable = (Variable *)ast.decode_designated_expression(expression);
+    if (!expression_variable or expression_variable->kind() != Object_Variable) {
+        throw errorf("cannot assign expression", token);
     }
 
-    for (const auto &[name, object] : operand->type.scope->objects) {
-        if (object->kind() != Object_Variable)
-            continue;
-        Dot_Expression *source = ast.push(new Dot_Expression{});
-        Dot_Expression *destination = ast.push(new Dot_Expression{});
+    Struct_Statement *destination = variable->type.struct_statement;
+    Struct_Statement *source = expression_variable->type.struct_statement;
 
-        source->record = operand;
-        source->member = (Variable *)object;
-        source->type = &operand->type;
-
-        destination->record = variable;
-        destination->member = (Variable *)object;
-        destination->type = &operand->type;
+    if (destination->hash != source->hash) {
+        throw errorf("cannot assign expression", token);
     }
+
+    Assign_Expression *assign_expression_head = NULL;
+    Assign_Expression *assign_expression_previous = NULL;
+
+    for (std::string_view name : views::keys(source->members)) {
+        Assign_Expression *assign_expression = parse_designated_assign_expression(
+            token, destination->members[name],
+            parse_designated_dot_expression(token, expression_variable, source->members[name]));
+
+        if (!assign_expression_head)
+            assign_expression_head = assign_expression;
+        if (assign_expression_previous)
+            assign_expression_previous->next = assign_expression;
+        assign_expression_previous = assign_expression;
+    }
+
+    return assign_expression_head;
 }
 
 Assign_Expression *Parser::parse_array_copy_expression(Token token, Variable *variable,
                                                        Expression *expression)
 {
     qcc_assert("TODO! parse_assign_expression_with_array()", 0);
+    return NULL;
 }
 
 Cast_Expression *Parser::parse_cast_expression(Token token, Expression *expression, Type *type)
@@ -1017,19 +1069,29 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
     }
 
     Token name = expect(Token_Id, "after '.' member access operator");
-    Scope_Statement *record_scope = dot_expression->type->scope;
+    Struct_Statement *struct_statement = dot_expression->type->struct_statement;
 
-    if (!record_scope->objects.contains(name.str)) {
+    if (!struct_statement->members.contains(name.str)) {
         std::string type_name = type_system.name(&dot_expression->record->type);
         throw errorf("member '{}.{}' is undeclared", name, type_name, name.str);
     }
 
-    dot_expression->member = (Variable *)record_scope->object(name.str);
+    dot_expression->member = struct_statement->members[name.str];
     if (!dot_expression->member) {
         std::string type_name = type_system.name(&dot_expression->record->type);
         throw errorf("member '{}.{}' is not a variable member", name, type_name, name.str);
     }
 
+    return dot_expression;
+}
+
+Dot_Expression *Parser::parse_designated_dot_expression(Token token, Variable *record, Variable *member)
+{
+    Dot_Expression *dot_expression = ast.push(new Dot_Expression{});
+
+    dot_expression->record = record;
+    dot_expression->member = member;
+    dot_expression->type = record->type.base();
     return dot_expression;
 }
 

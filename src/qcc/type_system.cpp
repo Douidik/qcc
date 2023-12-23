@@ -1,4 +1,5 @@
 #include "type_system.hpp"
+#include "ast.hpp"
 #include "expression.hpp"
 #include "object.hpp"
 #include "statement.hpp"
@@ -8,15 +9,70 @@
 namespace qcc
 {
 
+Type Type_System::clone_type(Ast &ast, Type *type)
+{
+    Type clone{};
+    clone.token = type->token;
+    clone.size = type->size;
+    clone.kind = type->kind;
+    clone.mods = type->mods;
+    clone.cvr = type->cvr;
+    clone.storage = type->storage;
+
+    switch (type->kind) {
+    case Type_Pointer: {
+        Type *pointed_type = new Type{clone_type(ast, type->pointed_type)};
+        clone.pointed_type = orphan_type_push(pointed_type);
+        break;
+    }
+
+    case Type_Struct:
+    case Type_Union: {
+        Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
+        struct_statement->keyword = type->struct_statement->keyword;
+        struct_statement->hash = type->struct_statement->hash;
+
+        for (auto &[name, variable] : type->struct_statement->members) {
+            struct_statement->members[name] = ast.push(new Variable{});
+            struct_statement->members[name]->type = clone_type(ast, &variable->type);
+            struct_statement->members[name]->mode = variable->mode;
+        }
+        break;
+    }
+
+    case Type_Enum: {
+        clone.enum_type = type->enum_type;
+        break;
+    }
+
+    case Type_Array: {
+        clone.array_type = type->array_type;
+        break;
+    }
+
+    case Type_Function_Pointer: {
+        qcc_assert("TODO! clone_type() for function pointers", 0);
+    }
+
+    default:
+        break; // no metadata
+    }
+
+    return clone;
+}
+
 Type *Type::base()
 {
-    if (kind & Type_Array)
+    switch (kind) {
+    case Type_Array:
         return array_type->base();
-    if (kind & Type_Pointer)
+    case Type_Pointer:
         return pointed_type->base();
-    if (kind & Type_Enum)
-        return enum_type->base();
-    return this;
+    case Type_Enum:
+        return enum_type;
+    default:
+        return this;
+    }
 }
 
 Type_System::~Type_System()
@@ -69,7 +125,7 @@ Type *Type_System::expression_type(Expression *expression)
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
         return deref_expression->type;
     }
-	
+
     default:
         qcc_assert("expression_type() does not support expression", 0);
         return NULL;
@@ -147,7 +203,7 @@ int32 Type_System::expression_precedence(Expression *expression)
             break;
         }
     }
-	
+
     if (expression->kind() & Expression_Comma) {
         return 15;
     }
@@ -191,58 +247,9 @@ uint32 Type_System::cast(Type *from, Type *into)
     }
     case Type_Union:
     case Type_Struct: {
-        // TODO! struct type cast
-        if (from->scope == into->scope)
-            return Type_Cast_Same;
-        return Type_Cast_Error;
-
-        // if (from->scope->objects.size() != into->scope->objects.size())
-        //     return Type_Cast_Error;
-
-        // uint32 worst_member_cast = Type_Cast_Same;
-        // auto from_it = std::views::keys(from->scope->objects);
-        // auto into_it = std::views::keys(into->scope->objects);
-
-        // // for (auto &[from_member, into_member] : std::views::zip(from_it, into_it)) {
-        // // }
-
-        // while (from_it != into->scope->objects.end() and into_it != into->scope->objects.end()) {
-        // Struct_Member *from_member = (Struct_Member *
-        // }
-
-        // while (from_it != from->scope->objects.end() and into_it != into->scope->objects.end()) {
-        //     if (from_parameter != NULL ^ into_parameter != NULL)
-        //         return Type_Cast_Error;
-        //     Type *from_parameter_type = &from_parameter->type;
-        //     Type *into_parameter_type = &into_parameter->type;
-        //     worst_parameter_cast |= cast(from_parameter_type, into_parameter_type);
-
-        //     from_parameter = from_parameter->next;
-        //     into_parameter = into_parameter->next;
-        // }
-
-        // for (const auto &[name, member] : from->scope->objects) {
-        //     qcc_assert("non-struct-member object in struct scope", member->kind() & Object_Struct_Member);
-
-        //     Struct_Member *from_member = from->struct_members;
-        //     Struct_Member *into_member = from->struct_members;
-        // }
-
-        // Struct_Member *from_member = from->struct_members;
-        // Struct_Member *into_member = from->struct_members;
-        // uint32 worst_member_cast = Type_Cast_Same;
-
-        // while (from_member and into_member) {
-        //     if (from_member != NULL ^ into_member != NULL)
-        //         return Type_Cast_Error;
-        //     Type *from_member_type = &from_member->type;
-        //     Type *into_member_type = &into_member->type;
-        //     worst_member_cast |= cast(from_member_type, into_member_type);
-
-        //     from_member = from_member->next;
-        //     into_member = into_member->next;
-        // }
-        // return worst_member_cast;
+        if (from->struct_statement->hash != into->struct_statement->hash)
+            return Type_Cast_Error;
+        return Type_Cast_Same;
     }
 
     default:
@@ -286,21 +293,18 @@ size_t Type_System::scalar_size(Type_Kind kind, uint32 mods)
 
 size_t Type_System::struct_size(Type *type)
 {
-    qcc_assert("type is not a struct or an union", type->kind & (Type_Struct | Type_Union));
+    size_t size = 0;
 
-    int64 size = 0;
-    for (Object *object : std::views::values(type->scope->objects)) {
-        qcc_assert("non-member object in struct declaration", object->kind() & Object_Variable);
-        size += ((Variable *)object)->type.size;
+    for (Variable *variable : std::views::values(type->struct_statement->members)) {
+        if (type->kind & Type_Union)
+            size = std::max(size, type->size);
+        if (type->kind & Type_Struct)
+            size += type->size;
     }
-
     return size;
 }
 
-Type Type_System::struct_copy(Type *type) {}
-
-
-Type *Type_System::merge(Type *destination, Type *source)
+Type *Type_System::merge_type(Type *destination, Type *source)
 {
     destination->kind = source->kind;
     destination->size = source->size;

@@ -346,7 +346,7 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     Function *function = invoke_expression->function;
 
     const auto on_register = [](Variable *variable) -> bool {
-        return variable->source & (Type_Gpr | Type_Fpr);
+        return variable->location & (Type_Gpr | Type_Fpr);
     };
 
     if (use_time < uses_timeline.size()) {
@@ -359,11 +359,14 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
          argument_expression = argument_expression->next) {
     }
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
-        make_expression(argument_expression->expression, Rax);
-        fmt::println(stream, "    push {}", Rax[argument_expression->parameter->type.size]);
+        Assign_Expression *assign_expression = argument_expression->assign_expression;
+	make_assign_expression(assign_expression, regs);
     }
 
     fmt::println(stream, "    call {}", function->name.str);
+    if (regs != Rdi) {
+        fmt::println(stream, "    mov {}, rdi", regs[8]);
+    }
     if (function->invoke_size != 0) {
         fmt::println(stream, "    sub rsp, {}", function->invoke_size);
     }
@@ -424,8 +427,11 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
 
 void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs)
 {
-    make_expression(assign_expression->operand, Rax);
-    make_variable_set(assign_expression->variable, Rax);
+    make_expression(assign_expression->expression, regs);
+    make_variable_set(assign_expression->variable, regs);
+
+    if (assign_expression->next != NULL)
+	make_assign_expression(assign_expression->next, regs);
 }
 
 void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs)
@@ -436,7 +442,7 @@ void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Re
     case Object_Variable: {
         Variable *variable = (Variable *)deref_expression->object;
 
-        switch (variable->source) {
+        switch (variable->location) {
         case Source_Stack:
             fmt::println(stream, "mov {}, [rbp - {:+}]", regs[8], variable->address);
             fmt::println(stream, "mov {}, [{}]", regs[8], regs[8]);
@@ -457,7 +463,7 @@ void X86::make_address_expression(Address_Expression *address_expression, const 
     case Object_Variable: {
         Variable *variable = (Variable *)address_expression->object;
 
-        switch (variable->source) {
+        switch (variable->location) {
         case Source_Stack:
             fmt::println(stream, "lea {}, [rpb - {}]", regs[8], variable->address);
             break;
@@ -484,7 +490,7 @@ void X86::make_source(Source *source, int64 size)
         fmt::print(stream, "{} [rbp {:+}]", Spec[size], source->address);
         break;
     case Source_Gpr:
-        fmt::print(stream, "{}", Gpr[variable->gpr][size]);
+        fmt::print(stream, "{}", Gpr[source->gpr][size]);
         break;
     default:
         qcc_assert("TODO! make_source for this source type", 0);
@@ -503,18 +509,17 @@ void X86::make_variable_pop(Object *object)
     fmt::print("    pop"), make_source(variable, size), fmt::print("\n");
 }
 
-void X86::make_variable_get(Object *object, Source *source)
+void X86::make_variable_get(Object *object, const X86_Register &regs)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov"), make_source(source, size);
+    fmt::print("    mov {}", regs[size]);
     fmt::print(", "), make_source(variable, size), fmt::print("\n");
 }
 
-void X86::make_variable_set(Object *object, Source *source)
+void X86::make_variable_set(Object *object, const X86_Register &regs)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov"), make_source(variable, size);
-    fmt::print(", "), make_source(source, size), fmt::print("\n");
+    fmt::print("    mov"), make_source(variable, size), fmt::print(", {}\n", regs[size]);
 }
 
 } // namespace qcc

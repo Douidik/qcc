@@ -13,6 +13,7 @@ struct Type;
 enum Statement_Kind : uint32;
 struct Statement;
 struct Scope_Statement;
+struct Struct_Statement;
 struct Function_Statement;
 struct Define_Statement;
 struct Expression_Statement;

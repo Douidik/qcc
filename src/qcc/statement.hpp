@@ -13,16 +13,17 @@ namespace qcc
 enum Statement_Kind : uint32
 {
     Statement_Scope = Bit(uint32, 0),
-    Statement_Function = Bit(uint32, 1),
-    Statement_Define = Bit(uint32, 2),
-    Statement_Expression = Bit(uint32, 3),
-    Statement_Condition = Bit(uint32, 4),
-    Statement_While = Bit(uint32, 5),
-    Statement_For = Bit(uint32, 6),
-    Statement_Jump = Bit(uint32, 7),
-    Statement_Record = Bit(uint32, 8),
-    Statement_Return = Bit(uint32, 9),
-    Statement_Kind_Each = Bit(uint32, 10) - 1,
+    Statement_Struct = Bit(uint32, 1),
+    Statement_Function = Bit(uint32, 2),
+    Statement_Define = Bit(uint32, 3),
+    Statement_Expression = Bit(uint32, 4),
+    Statement_Condition = Bit(uint32, 5),
+    Statement_While = Bit(uint32, 6),
+    Statement_For = Bit(uint32, 7),
+    Statement_Jump = Bit(uint32, 8),
+    Statement_Record = Bit(uint32, 9),
+    Statement_Return = Bit(uint32, 10),
+    Statement_Kind_Each = Bit(uint32, 11) - 1,
 };
 
 constexpr std::string_view statement_kind_str(Statement_Kind kind)
@@ -71,6 +72,18 @@ struct Scope_Statement : Statement
     Statement_Kind kind() const override
     {
         return Statement_Scope;
+    }
+};
+
+struct Struct_Statement : Statement
+{
+    uint64 hash;
+    Token keyword;
+    std::unordered_map<std::string_view, Variable *> members;
+    
+    Statement_Kind kind() const override
+    {
+        return Statement_Struct;
     }
 };
 
@@ -154,7 +167,7 @@ struct Jump_Statement : Statement
 struct Record_Statement : Statement
 {
     Type *type;
-    
+
     Statement_Kind kind() const override
     {
         return Statement_Record;

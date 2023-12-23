@@ -24,6 +24,8 @@ struct Parser
     void parse_type_cvr(Type *type, Token token, bool is_pointer_type);
     Type parse_type();
     Type parse_pointer_type(Type pointed_type);
+    Type parse_struct_type(Token keyword);
+    Struct_Statement *parse_struct_statement(Token keyword);
 
     Statement *parse_define_or_function_statement();
     Define_Statement *parse_define_statement(Type type, Token name, Define_Mode mode,
@@ -34,7 +36,6 @@ struct Parser
     Scope_Statement *parse_scope_statement(Scope_Statement *scope_statement, uint32 statement_mask,
                                            int128 end_mask);
 
-    Type struct_deep_copy(Type *source);
     Record_Statement *parse_record_statement(Token keyword);
     Scope_Statement *parse_struct_scope_statement(Token keyword);
     Scope_Statement *parse_enum_scope_statement(Token keyword, Type *enum_type);
@@ -63,6 +64,7 @@ struct Parser
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
     Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
+    Dot_Expression *parse_designated_dot_expression(Token token, Variable *record, Variable *member);
     Deref_Expression *parse_deref_expression(Token token, Expression *operand);
     Address_Expression *parse_address_expression(Token token, Expression *operand);
 

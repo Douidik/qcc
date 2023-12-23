@@ -183,12 +183,12 @@ struct Nested_Expression : Expression
 struct Assign_Expression : Expression
 {
     Variable *variable;
-    Expression *operand;
+    Expression *expression;
+    Type *type;
 
-    // used to break down structures into register assignments
-    // ',' after assignment are parsed as comma expressions
+    // Split assignment to aggregate types into register fit assignments
     Assign_Expression *next;
-    
+
     Expression_Kind kind() const override
     {
         return Expression_Assign;

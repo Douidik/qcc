@@ -177,7 +177,7 @@ struct Type
     Type_Storage storage;
 
     union {
-        Scope_Statement *scope;
+	Struct_Statement *struct_statement;
         Type *pointed_type;
         Function *function;
         Type *array_type;
@@ -197,14 +197,16 @@ struct Type_System
     const Type double_type = {{}, 8, Type_Double};
     std::vector<Type *> orphan_types;
 
+    ~Type_System();
     Type *find_fundamental_type(Type_Kind kind, uint32 mods);
     Type *expression_type(Expression *expression);
     int32 expression_precedence(Expression *expression);
     uint32 cast(Type *from, Type *into);
     size_t scalar_size(Type_Kind kind, uint32 mods);
     size_t struct_size(Type *type);
-    Type *merge(Type *destination, Type *source);
+    Type *merge_type(Type *destination, Type *source);
     Type *orphan_type_push(Type *type);
+    Type clone_type(Ast &ast, Type *type);
     std::string name(Type *type);
 
     Error errorf(std::string_view fmt, auto... args) const
