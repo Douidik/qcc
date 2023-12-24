@@ -40,8 +40,8 @@ struct Function : Object
     Define_Statement *parameters;
     std::vector<Variable *> locals;
     Type return_type;
-    size_t invoke_size;
-    size_t stack_size;
+    int64 invoke_size;
+    int64 stack_size;
     bool is_main;
 
     Object_Kind kind() const override

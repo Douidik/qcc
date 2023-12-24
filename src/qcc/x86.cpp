@@ -183,8 +183,6 @@ void X86::make_return_statement(Return_Statement *return_statement)
 void X86::make_expression(Expression *expression, const X86_Register &regs)
 {
     switch (expression->kind()) {
-    case Expression_Assign:
-        return make_assign_expression((Assign_Expression *)expression, regs);
     case Expression_Binary:
         return make_binary_expression((Binary_Expression *)expression, regs);
     case Expression_Unary:
@@ -193,8 +191,16 @@ void X86::make_expression(Expression *expression, const X86_Register &regs)
         return make_int_expression((Int_Expression *)expression, regs);
     case Expression_Id:
         return make_id_expression((Id_Expression *)expression, regs);
-    case Expression_Invoke:
-        return make_invoke_expression((Invoke_Expression *)expression, regs);
+    case Expression_Nested:
+        return make_nested_expression((Nested_Expression *)expression, regs);
+    case Expression_Assign:
+        return make_assign_expression((Assign_Expression *)expression, regs);
+    case Expression_Dot:
+        return make_dot_expression((Dot_Expression *)expression, regs);
+    case Expression_Deref:
+        return make_deref_expression((Deref_Expression *)expression, regs);
+    case Expression_Address:
+        return make_address_expression((Address_Expression *)expression, regs);
     default:
         break;
     }
@@ -360,7 +366,7 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     }
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
         Assign_Expression *assign_expression = argument_expression->assign_expression;
-	make_assign_expression(assign_expression, regs);
+        make_assign_expression(assign_expression, regs);
     }
 
     fmt::println(stream, "    call {}", function->name.str);
@@ -377,53 +383,10 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     }
 }
 
-// void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs)
-// {
-//     bool needs_register_save = invoke_expression->use_time < allocator.uses_timeline.size();
-//     std::set<Variable *> *used_variables = NULL;
-
-//     if (needs_register_save) {
-//         used_variables = &allocator.uses_timeline.at(invoke_expression->use_time);
-//         for (Variable *variable : *used_variables) {
-//             if (variable->source & (Type_Fpr | Type_Gpr))
-//                 make_variable_push(variable);
-//         }
-//     }
-
-//     // __cdecl function invoke: arguments are passed on the stack from right to left
-//     // function(argument_0, argument_1, ..., argument_n)
-//     // argument_0
-//     // argument_1
-//     // ...
-//     // argument_n
-//     // saved registers
-//     Argument_Expression *argument_expression = invoke_expression->arguments;
-//     size_t argument_stack_size = 0;
-
-//     for (; argument_expression->next != NULL; argument_expression = argument_expression->next) {
-//     }
-//     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
-//         size_t size = argument_expression->parameter->type.size;
-//         make_expression(argument_expression->expression, Rax);
-//         fmt::println(stream, "    push rax");
-//         argument_stack_size += 8;
-//     }
-
-//     fmt::println(stream, "    call {}", invoke_expression->function->name.str);
-//     if (regs != Rdi) {
-//         fmt::println(stream, "    mov {}, rdi", regs[8]);
-//     }
-//     if (argument_stack_size != 0) {
-//         fmt::println(stream, "    sub rsp, {}", argument_stack_size);
-//     }
-
-//     if (needs_register_save) {
-//         for (Variable *variable : *used_variables | std::views::reverse) {
-//             if (variable->source & (Type_Fpr | Type_Gpr))
-//                 make_variable_pop(variable);
-//         }
-//     }
-// }
+void X86::make_nested_expression(Nested_Expression *nested_expression, const X86_Register &regs)
+{
+    make_expression(nested_expression->operand, regs);
+}
 
 void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs)
 {
@@ -431,7 +394,12 @@ void X86::make_assign_expression(Assign_Expression *assign_expression, const X86
     make_variable_set(assign_expression->variable, regs);
 
     if (assign_expression->next != NULL)
-	make_assign_expression(assign_expression->next, regs);
+        make_assign_expression(assign_expression->next, regs);
+}
+
+void X86::make_dot_expression(Dot_Expression *dot_expression, const X86_Register &regs)
+{
+    make_variable_get(dot_expression->member, regs);
 }
 
 void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs)
@@ -500,13 +468,13 @@ void X86::make_source(Source *source, int64 size)
 void X86::make_variable_push(Object *object)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    push"), make_source(variable, size), fmt::print("\n");
+    fmt::print("    push "), make_source(variable, size), fmt::print("\n");
 }
 
 void X86::make_variable_pop(Object *object)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    pop"), make_source(variable, size), fmt::print("\n");
+    fmt::print("    pop "), make_source(variable, size), fmt::print("\n");
 }
 
 void X86::make_variable_get(Object *object, const X86_Register &regs)
@@ -519,7 +487,7 @@ void X86::make_variable_get(Object *object, const X86_Register &regs)
 void X86::make_variable_set(Object *object, const X86_Register &regs)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov"), make_source(variable, size), fmt::print(", {}\n", regs[size]);
+    fmt::print("    mov "), make_source(variable, size), fmt::print(", {}\n", regs[size]);
 }
 
 } // namespace qcc

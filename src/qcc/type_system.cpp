@@ -9,58 +9,6 @@
 namespace qcc
 {
 
-Type Type_System::clone_type(Ast &ast, Type *type)
-{
-    Type clone{};
-    clone.token = type->token;
-    clone.size = type->size;
-    clone.kind = type->kind;
-    clone.mods = type->mods;
-    clone.cvr = type->cvr;
-    clone.storage = type->storage;
-
-    switch (type->kind) {
-    case Type_Pointer: {
-        Type *pointed_type = new Type{clone_type(ast, type->pointed_type)};
-        clone.pointed_type = orphan_type_push(pointed_type);
-        break;
-    }
-
-    case Type_Struct:
-    case Type_Union: {
-        Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
-        struct_statement->keyword = type->struct_statement->keyword;
-        struct_statement->hash = type->struct_statement->hash;
-
-        for (auto &[name, variable] : type->struct_statement->members) {
-            struct_statement->members[name] = ast.push(new Variable{});
-            struct_statement->members[name]->type = clone_type(ast, &variable->type);
-            struct_statement->members[name]->mode = variable->mode;
-        }
-        break;
-    }
-
-    case Type_Enum: {
-        clone.enum_type = type->enum_type;
-        break;
-    }
-
-    case Type_Array: {
-        clone.array_type = type->array_type;
-        break;
-    }
-
-    case Type_Function_Pointer: {
-        qcc_assert("TODO! clone_type() for function pointers", 0);
-    }
-
-    default:
-        break; // no metadata
-    }
-
-    return clone;
-}
-
 Type *Type::base()
 {
     switch (kind) {
@@ -72,6 +20,25 @@ Type *Type::base()
         return enum_type;
     default:
         return this;
+    }
+}
+
+size_t Type::alignment()
+{
+    switch (kind) {
+    case Type_Union:
+    case Type_Struct: {
+        size_t struct_alignment = 0;
+        for (Variable *member : std::views::values(struct_statement->members)) {
+            struct_alignment = std::max(struct_alignment, member->type.alignment());
+        }
+        return struct_alignment;
+    }
+
+    case Type_Array:
+        return array_type->alignment();
+    default:
+        return size;
     }
 }
 
@@ -295,27 +262,82 @@ size_t Type_System::struct_size(Type *type)
 {
     size_t size = 0;
 
-    for (Variable *variable : std::views::values(type->struct_statement->members)) {
+    for (Variable *member : std::views::values(type->struct_statement->members)) {
         if (type->kind & Type_Union)
-            size = std::max(size, type->size);
+            size = std::max(size, member->type.size);
         if (type->kind & Type_Struct)
-            size += type->size;
+            size += member->type.size;
     }
     return size;
 }
 
 Type *Type_System::merge_type(Type *destination, Type *source)
 {
-    destination->kind = source->kind;
+    destination->token = source->token;
     destination->size = source->size;
-    destination->data = source->data;
+    destination->kind = source->kind;
     destination->mods |= source->mods;
+    destination->data = source->data;
     return destination;
 }
 
 Type *Type_System::orphan_type_push(Type *type)
 {
     return orphan_types.emplace_back(type);
+}
+
+Type Type_System::clone_type(Ast &ast, Type *type)
+{
+    Type clone{};
+    clone.token = type->token;
+    clone.size = type->size;
+    clone.kind = type->kind;
+    clone.mods = type->mods;
+    clone.cvr = type->cvr;
+    clone.storage = type->storage;
+
+    switch (type->kind) {
+    case Type_Pointer: {
+        Type *pointed_type = new Type{clone_type(ast, type->pointed_type)};
+        clone.pointed_type = orphan_type_push(pointed_type);
+        break;
+    }
+
+    case Type_Struct:
+    case Type_Union: {
+        Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
+        struct_statement->keyword = type->struct_statement->keyword;
+        struct_statement->hash = type->struct_statement->hash;
+
+        for (auto &[name, variable] : type->struct_statement->members) {
+            struct_statement->members[name] = ast.push(new Variable{});
+            struct_statement->members[name]->type = clone_type(ast, &variable->type);
+            struct_statement->members[name]->name = variable->name;
+            struct_statement->members[name]->mode = variable->mode;
+        }
+        clone.struct_statement = struct_statement;
+        break;
+    }
+
+    case Type_Enum: {
+        clone.enum_type = type->enum_type;
+        break;
+    }
+
+    case Type_Array: {
+        clone.array_type = type->array_type;
+        break;
+    }
+
+    case Type_Function_Pointer: {
+        qcc_assert("TODO! clone_type() for function pointers", 0);
+    }
+
+    default:
+        break; // no metadata
+    }
+
+    return clone;
 }
 
 std::string Type_System::name(Type *type)

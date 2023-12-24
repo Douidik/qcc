@@ -177,7 +177,7 @@ struct Type
     Type_Storage storage;
 
     union {
-	Struct_Statement *struct_statement;
+        Struct_Statement *struct_statement;
         Type *pointed_type;
         Function *function;
         Type *array_type;
@@ -185,6 +185,7 @@ struct Type
         void *data;
     };
 
+    size_t alignment();
     Type *base();
 };
 

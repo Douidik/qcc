@@ -31,7 +31,9 @@ struct X86 : Asm
     void make_binary_expression(Binary_Expression *binary_expression, const X86_Register &regs);
     void make_unary_expression(Unary_Expression *unary_expression, const X86_Register &regs);
     void make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs);
+    void make_nested_expression(Nested_Expression *nested_expression, const X86_Register &regs);
     void make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs);
+    void make_dot_expression(Dot_Expression *dot_expression, const X86_Register &regs);
     void make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs);
     void make_address_expression(Address_Expression *address_expression, const X86_Register &regs);
 

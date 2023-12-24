@@ -49,7 +49,7 @@ Type Parser::parse_type()
     Type type = {};
     type.size = -1;
     bool type_mods_allowed = true;
-    bool inside_pointer = true;
+    bool inside_pointer = false;
     int128 mask = Token_Mask_Type | Token_Mask_Record | Token_Id;
 
     while ((token = scan(mask)).ok) {
@@ -186,6 +186,7 @@ Type Parser::parse_struct_type(Token keyword)
     if (scope_begin.ok) {
         record = ast.push(new Record{});
         record->name = name;
+	record->type.kind = token_to_type_kind(keyword.type);
         record->type.token = name;
         record->type.struct_statement = parse_struct_statement(keyword);
         record->type.size = type_system.struct_size(&record->type);
@@ -254,10 +255,8 @@ Statement *Parser::parse_define_or_function_statement()
 {
     Type type = parse_type();
     Token name = expect(Token_Id | Token_Semicolon, "after type in define statement");
-
-    if (name.type & Token_Semicolon)
-        return NULL;
-    if (peek(Token_Paren_Begin).ok)
+	
+    if (name.ok and peek(Token_Paren_Begin).ok)
         return parse_function_statement(type, name);
     else
         return parse_define_statement(type, name, Define_Variable, NULL, Token_Semicolon);
@@ -266,10 +265,8 @@ Statement *Parser::parse_define_or_function_statement()
 Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_Mode mode,
                                                  Define_Statement *previous, int128 end_mask)
 {
-    if (!name.ok) {
-        expect(end_mask, "after empty define statement");
+    if (name.type & Token_Semicolon)
         return NULL;
-    }
 
     Define_Statement *define_statement = ast.push(new Define_Statement{});
     Variable *variable = ast.push(new Variable{});
