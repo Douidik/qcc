@@ -32,16 +32,17 @@ struct X86 : Asm
     void make_unary_expression(Unary_Expression *unary_expression, const X86_Register &regs);
     void make_invoke_expression(Invoke_Expression *invoke_expression, const X86_Register &regs);
     void make_nested_expression(Nested_Expression *nested_expression, const X86_Register &regs);
-    void make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs);
+    void make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs,
+                                int64 offset = 0);
     void make_dot_expression(Dot_Expression *dot_expression, const X86_Register &regs);
     void make_deref_expression(Deref_Expression *deref_expression, const X86_Register &regs);
     void make_address_expression(Address_Expression *address_expression, const X86_Register &regs);
-
-    void make_source(Source *source, int64 size);
-    void make_variable_push(Object *object);
-    void make_variable_pop(Object *object);
-    void make_variable_get(Object *object, const X86_Register &regs);
-    void make_variable_set(Object *object, const X86_Register &regs);
+    
+    void make_source(Source *source, int64 size, int64 offset = 0);
+    void make_variable_push(Object *object, int64 offset = 0);
+    void make_variable_pop(Object *object, int64 offset = 0);
+    void make_variable_get(Object *object, const X86_Register &regs, int64 offset = 0);
+    void make_variable_set(Object *object, const X86_Register &regs, int64 offset = 0);
 };
 
 } // namespace qcc

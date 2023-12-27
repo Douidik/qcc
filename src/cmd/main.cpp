@@ -30,6 +30,8 @@ int x86_run(std::filesystem::path filepath)
     parser.parse();
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();
+    // ast.dump_statement(std::cout, (Statement *)ast.main_statement, 0);
+    
     X86 x86 = {ast, allocator, source, std::cout};
     x86.make();
 

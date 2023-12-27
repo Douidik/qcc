@@ -64,11 +64,29 @@ enum Define_Mode : uint32
     Define_Variable = Bit(uint32, 5),
 };
 
+constexpr std::string_view define_mode_str(uint32 define_mode)
+{
+    switch (define_mode) {
+    case Define_Struct:
+        return "struct";
+    case Define_Union:
+        return "union";
+    case Define_Enum:
+        return "enum";
+    case Define_Parameter:
+        return "parameter";
+    case Define_Variable:
+        return "variable";
+    default:
+        return "?";
+    }
+}
+
 struct Variable : Object, Source
 {
     Type type;
     int64 constant;
-    Define_Mode mode;
+    uint32 mode;
 
     Object_Kind kind() const override
     {

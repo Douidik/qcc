@@ -273,7 +273,6 @@ size_t Type_System::struct_size(Type *type)
 
 Type *Type_System::merge_type(Type *destination, Type *source)
 {
-    destination->token = source->token;
     destination->size = source->size;
     destination->kind = source->kind;
     destination->mods |= source->mods;

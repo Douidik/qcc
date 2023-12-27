@@ -17,7 +17,9 @@ struct Ast
     ~Ast();
     Object *decode_designated_expression(Expression *expression);
     Expression *search_designated_expression(Expression *expression);
-    void each_expression_of(Expression *expression, uint32 mask, std::vector<Expression *> &data);
+    void dump_statement(std::ostream &stream, Statement *statement, int32 indent);
+    void dump_expression(std::ostream &stream, Expression *expression, int32 indent);
+    void dump_object(std::ostream &stream, Object *object, int32 indent);
 
     template <typename T, typename D = std::decay_t<T>>
     T *push(T *value)

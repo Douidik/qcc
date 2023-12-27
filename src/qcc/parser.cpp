@@ -128,7 +128,6 @@ Type Parser::parse_type()
             inside_pointer = true;
             mask = 0;
         }
-
         type.token |= token;
     }
 
@@ -186,7 +185,7 @@ Type Parser::parse_struct_type(Token keyword)
     if (scope_begin.ok) {
         record = ast.push(new Record{});
         record->name = name;
-	record->type.kind = token_to_type_kind(keyword.type);
+        record->type.kind = token_to_type_kind(keyword.type);
         record->type.token = name;
         record->type.struct_statement = parse_struct_statement(keyword);
         record->type.size = type_system.struct_size(&record->type);
@@ -255,7 +254,7 @@ Statement *Parser::parse_define_or_function_statement()
 {
     Type type = parse_type();
     Token name = expect(Token_Id | Token_Semicolon, "after type in define statement");
-	
+
     if (name.ok and peek(Token_Paren_Begin).ok)
         return parse_function_statement(type, name);
     else
@@ -301,7 +300,7 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_M
             throw errorf("redefinition of '{}'", name, name.str);
     }
     if (mode & (Define_Struct | Define_Union | Define_Parameter)) {
-        // Parameters-wise check of duplicate
+        // Local-wise check of duplicate
         if (context_scope()->objects.contains(name.str))
             throw errorf("redefinition of '{}'", name, name.str);
     }
@@ -958,6 +957,42 @@ Invoke_Expression *Parser::parse_invoke_expression(Token token, Expression *prev
     return invoke_expression;
 }
 
+// Expression *Parser::parse_move_or_assign_expression(Token token, Expression *lhs, Expression *rhs)
+// {
+//     Object *object = ast.decode_designated_expression(lhs);
+//     if (!object or object->kind() != Object_Variable or !object->has_assign()) {
+//         throw errorf("left-hand side expression is not assignable", token);
+//     }
+
+//     Variable *variable = (Variable *)object;
+//     if (variable->type.kind & Type_Scalar)
+//         return parse_assign_expression(token, variable, rhs);
+//     if (variable->type.kind & Type_Aggregate)
+//         return parse_move_expression(token, variable, rhs);
+// }
+
+Assign_Expression *Parser::parse_scalar_copy_expression(Token token, Variable *variable,
+                                                        Expression *expression)
+{
+    Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
+    assign_expression->variable = variable;
+    assign_expression->type = &assign_expression->variable->type;
+    assign_expression->expression = cast_if_needed(token, expression, assign_expression->type);
+
+    return assign_expression;
+}
+
+// Move_Expression *Parser::parse_move_expression(Token token, Variable *variable, Expression *expression)
+// {
+//     Move_Expression *move_expression = ast.push(new Move_Expression{});
+//     move_expression->destination = variable;
+//     move_expression->source = ast.decode_designated_expression(expression);
+//     move_expression->size = variable->type.size;
+
+//     Type *
+
+// }
+
 Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs, Expression *rhs)
 {
     Object *object = ast.decode_designated_expression(lhs);
@@ -985,17 +1020,6 @@ Assign_Expression *Parser::parse_designated_assign_expression(Token token, Varia
     return NULL;
 }
 
-Assign_Expression *Parser::parse_scalar_copy_expression(Token token, Variable *variable,
-                                                        Expression *expression)
-{
-    Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
-    assign_expression->variable = variable;
-    assign_expression->type = &assign_expression->variable->type;
-    assign_expression->expression = cast_if_needed(token, expression, assign_expression->type);
-
-    return assign_expression;
-}
-
 Assign_Expression *Parser::parse_struct_copy_expression(Token token, Variable *variable,
                                                         Expression *expression)
 {
@@ -1011,22 +1035,21 @@ Assign_Expression *Parser::parse_struct_copy_expression(Token token, Variable *v
         throw errorf("cannot assign expression", token);
     }
 
-    Assign_Expression *assign_expression_head = NULL;
+    Assign_Expression *assign_expression = NULL;
     Assign_Expression *assign_expression_previous = NULL;
+    Dot_Expression *dot_expression = NULL;
 
-    for (std::string_view name : views::keys(source->members)) {
-        Assign_Expression *assign_expression = parse_designated_assign_expression(
-            token, destination->members[name],
-            parse_designated_dot_expression(token, expression_variable, source->members[name]));
+    for (auto [name, _] : source->members) {
+        dot_expression = parse_designated_dot_expression(token, expression_variable, source->members[name]);
+        assign_expression =
+            parse_designated_assign_expression(token, destination->members[name], dot_expression);
 
-        if (!assign_expression_head)
-            assign_expression_head = assign_expression;
         if (assign_expression_previous)
-            assign_expression_previous->next = assign_expression;
+            assign_expression->next = assign_expression_previous;
         assign_expression_previous = assign_expression;
     }
 
-    return assign_expression_head;
+    return assign_expression;
 }
 
 Assign_Expression *Parser::parse_array_copy_expression(Token token, Variable *variable,
@@ -1047,7 +1070,6 @@ Cast_Expression *Parser::parse_cast_expression(Token token, Expression *expressi
         throw errorf("missing expression for type cast expression", token);
     if (!cast_expression->into)
         throw errorf("missing type for type cast expression", token);
-
     return cast_expression;
 }
 

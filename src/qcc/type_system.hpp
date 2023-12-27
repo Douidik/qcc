@@ -33,8 +33,10 @@ enum Type_Kind : uint32
     Type_Function_Pointer = Bit(uint32, 9),
     Type_Void = Bit(uint32, 10),
     Type_Kind_Each = Bit(uint32, 11) - 1,
-    Type_Scalar = (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer),
+    Type_Scalar =
+        (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer | Type_Enum | Type_Function_Pointer),
     Type_Record = (Type_Struct | Type_Union | Type_Enum),
+    Type_Aggregate = (Type_Struct | Type_Union | Type_Array),
     Type_Gpr = (Type_Char | Type_Int | Type_Pointer | Type_Enum),
     Type_Fpr = (Type_Double | Type_Float),
 };

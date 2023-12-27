@@ -31,6 +31,8 @@ constexpr std::string_view statement_kind_str(Statement_Kind kind)
     switch (kind) {
     case Statement_Scope:
         return "scope";
+    case Statement_Struct:
+        return "struct";
     case Statement_Function:
         return "function";
     case Statement_Define:

@@ -130,10 +130,10 @@ enum Token_Type : int128
 
 const int128 Token_Mask_Expression =
     Token_Id | Token_Char | Token_String | Token_Int | Token_Int_Bin | Token_Int_Hex | Token_Float |
-    Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul | Token_Div | Token_Mod | Token_Not |
-    Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R | Token_Eq |
-    Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq | Token_Paren_Begin |
-    Token_Assign | Token_Dot | Token_Deref;
+    Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul | Token_Div | Token_Mod |
+    Token_Not | Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R |
+    Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq |
+    Token_Paren_Begin | Token_Assign | Token_Dot | Token_Deref;
 
 const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;
 
@@ -155,6 +155,8 @@ const int128 Token_Mask_Binary_Assign = Token_Assign | Token_Add_Assign | Token_
                                         Token_Mul_Assign | Token_Div_Assign | Token_Mod_Assign |
                                         Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
                                         Token_Bin_Xor_Assign | Token_Bin_Or_Assign;
+
+const int128 Token_Mask_Shift = Token_Shift_L | Token_Shift_R | Token_Shift_L_Assign | Token_Shift_R_Assign;
 
 const int128 Token_Mask_Bin = Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
                               Token_Bin_Xor_Assign | Token_Bin_Or_Assign | Token_Bin_Not | Token_Bin_And |

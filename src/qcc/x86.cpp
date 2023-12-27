@@ -91,23 +91,23 @@ void X86::make_function_statement(Function_Statement *function_statement)
     if (function->stack_size != 0)
         fmt::println(stream, "    sub rsp, {}", function->stack_size);
 
-    // __cdecl function fetch arguments from stack
-    // from function(argument_0, ..., argument_n - 1, argument_n)
-    // now, the invoked function stack looks like
-    // rbp
-    // return_address
-    // argument_0
-    // argument_1
-    // ...
-    // argument_n
-    Define_Statement *parameter_statement = function->parameters;
-    size_t argument_offset = 16; // (rbp + return_address)
-    for (; parameter_statement != NULL; parameter_statement = parameter_statement->next) {
-        size_t size = parameter_statement->variable->type.size;
-        fmt::println(stream, "    mov {}, {} [rbp + {}]", Rax[size], Spec[size], argument_offset);
-        make_variable_set(parameter_statement->variable, Rax);
-        argument_offset += 8;
-    }
+    // // __cdecl function fetch arguments from stack
+    // // from function(argument_0, ..., argument_n - 1, argument_n)
+    // // now, the invoked function stack looks like
+    // // rbp
+    // // return_address
+    // // argument_0
+    // // argument_1
+    // // ...
+    // // argument_n
+    // Define_Statement *parameter_statement = function->parameters;
+    // size_t argument_offset = 16; // (rbp + return_address)
+    // for (; parameter_statement != NULL; parameter_statement = parameter_statement->next) {
+    //     size_t size = parameter_statement->variable->type.size;
+    //     fmt::println(stream, "    mov {}, {} [rbp + {}]", Rax[size], Spec[size], argument_offset);
+    //     make_variable_set(parameter_statement->variable, Rax);
+    //     argument_offset += 8;
+    // }
 
     make_scope_statement(function_statement->scope);
     fmt::println(stream, "{}.return:", function->name.str);
@@ -191,6 +191,8 @@ void X86::make_expression(Expression *expression, const X86_Register &regs)
         return make_int_expression((Int_Expression *)expression, regs);
     case Expression_Id:
         return make_id_expression((Id_Expression *)expression, regs);
+    case Expression_Invoke:
+        return make_invoke_expression((Invoke_Expression *)expression, regs);
     case Expression_Nested:
         return make_nested_expression((Nested_Expression *)expression, regs);
     case Expression_Assign:
@@ -219,8 +221,12 @@ void X86::make_id_expression(Id_Expression *id_expression, const X86_Register &r
 
 void X86::make_binary_expression(Binary_Expression *binary_expression, const X86_Register &regs)
 {
+    if (binary_expression->operation.type & (Token_Mask_Shift))
+        make_expression(binary_expression->rhs, Rcx);
+    else
+        make_expression(binary_expression->rhs, Rdi);
+
     make_expression(binary_expression->lhs, Rax);
-    make_expression(binary_expression->rhs, Rdi);
 
     const char *f = (binary_expression->type->kind & Type_Fpr) ? "f" : "";
 
@@ -293,12 +299,10 @@ void X86::make_binary_expression(Binary_Expression *binary_expression, const X86
     // sal/sar instructions uses the count register
     case Token_Shift_L:
     case Token_Shift_L_Assign:
-        fmt::println(stream, "    mov cl, dil");
         fmt::println(stream, "    sal rax, cl");
         break;
     case Token_Shift_R:
     case Token_Shift_R_Assign:
-        fmt::println(stream, "    mov cl, dil");
         fmt::println(stream, "    sar rax, cl");
         break;
 
@@ -308,6 +312,9 @@ void X86::make_binary_expression(Binary_Expression *binary_expression, const X86
 
     if (binary_expression->operation.type & (Token_Mask_Binary_Assign)) {
         make_variable_set(ast.decode_designated_expression(binary_expression), Rax);
+    }
+    if (regs != Rax) {
+        fmt::println("    mov {}, rax", regs[8]);
     }
 }
 
@@ -352,7 +359,7 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     Function *function = invoke_expression->function;
 
     const auto on_register = [](Variable *variable) -> bool {
-        return variable->location & (Type_Gpr | Type_Fpr);
+        return variable->location & (Source_Gpr | Source_Fpr);
     };
 
     if (use_time < uses_timeline.size()) {
@@ -366,15 +373,18 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     }
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
         Assign_Expression *assign_expression = argument_expression->assign_expression;
-        make_assign_expression(assign_expression, regs);
+        for (; assign_expression != NULL; assign_expression = assign_expression->next) {
+            make_expression(assign_expression->expression, Rax);
+            fmt::println(stream, "    push rax");
+        }
     }
-
     fmt::println(stream, "    call {}", function->name.str);
+
+    if (function->invoke_size != 0) {
+        fmt::println(stream, "    add rsp, {}", function->invoke_size);
+    }
     if (regs != Rdi) {
         fmt::println(stream, "    mov {}, rdi", regs[8]);
-    }
-    if (function->invoke_size != 0) {
-        fmt::println(stream, "    sub rsp, {}", function->invoke_size);
     }
 
     if (use_time < uses_timeline.size()) {
@@ -388,10 +398,10 @@ void X86::make_nested_expression(Nested_Expression *nested_expression, const X86
     make_expression(nested_expression->operand, regs);
 }
 
-void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs)
+void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs, int64 offset)
 {
     make_expression(assign_expression->expression, regs);
-    make_variable_set(assign_expression->variable, regs);
+    make_variable_set(assign_expression->variable, regs, offset);
 
     if (assign_expression->next != NULL)
         make_assign_expression(assign_expression->next, regs);
@@ -412,8 +422,8 @@ void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Re
 
         switch (variable->location) {
         case Source_Stack:
-            fmt::println(stream, "mov {}, [rbp - {:+}]", regs[8], variable->address);
-            fmt::println(stream, "mov {}, [{}]", regs[8], regs[8]);
+            fmt::println(stream, "    mov {}, [rbp - {:+}]", regs[8], variable->address);
+            fmt::println(stream, "    mov {}, [{}]", regs[8], regs[8]);
             break;
         default:
             qcc_assert("TODO! make_deref_expression for this variable source type", 0);
@@ -433,7 +443,7 @@ void X86::make_address_expression(Address_Expression *address_expression, const 
 
         switch (variable->location) {
         case Source_Stack:
-            fmt::println(stream, "lea {}, [rpb - {}]", regs[8], variable->address);
+            fmt::println(stream, "    lea {}, [rpb - {}]", regs[8], variable->address);
             break;
         default:
             qcc_assert("TODO! make_address_expression for this variable source type", 0);
@@ -451,11 +461,13 @@ auto decode_variable_and_size(Object *object)
     return std::make_tuple((Variable *)object, ((Variable *)object)->type.size);
 }
 
-void X86::make_source(Source *source, int64 size)
+void X86::make_source(Source *source, int64 size, int64 offset)
 {
+    qcc_assert("source does not fit in an x86_64 register", size <= 8);
+
     switch (source->location) {
     case Source_Stack:
-        fmt::print(stream, "{} [rbp {:+}]", Spec[size], source->address);
+        fmt::print(stream, "{} [rbp {:+}]", Spec[size], source->address + offset);
         break;
     case Source_Gpr:
         fmt::print(stream, "{}", Gpr[source->gpr][size]);
@@ -465,29 +477,29 @@ void X86::make_source(Source *source, int64 size)
     }
 }
 
-void X86::make_variable_push(Object *object)
+void X86::make_variable_push(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    push "), make_source(variable, size), fmt::print("\n");
+    fmt::print("    push "), make_source(variable, size, offset), fmt::print("\n");
 }
 
-void X86::make_variable_pop(Object *object)
+void X86::make_variable_pop(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    pop "), make_source(variable, size), fmt::print("\n");
+    fmt::print("    pop "), make_source(variable, size, offset), fmt::print("\n");
 }
 
-void X86::make_variable_get(Object *object, const X86_Register &regs)
+void X86::make_variable_get(Object *object, const X86_Register &regs, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
     fmt::print("    mov {}", regs[size]);
-    fmt::print(", "), make_source(variable, size), fmt::print("\n");
+    fmt::print(", "), make_source(variable, size, offset), fmt::print("\n");
 }
 
-void X86::make_variable_set(Object *object, const X86_Register &regs)
+void X86::make_variable_set(Object *object, const X86_Register &regs, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov "), make_source(variable, size), fmt::print(", {}\n", regs[size]);
+    fmt::print("    mov "), make_source(variable, size, offset), fmt::print(", {}\n", regs[size]);
 }
 
 } // namespace qcc

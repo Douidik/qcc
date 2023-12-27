@@ -68,6 +68,10 @@ struct Parser
     Deref_Expression *parse_deref_expression(Token token, Expression *operand);
     Address_Expression *parse_address_expression(Token token, Expression *operand);
 
+    Expression *parse_move_or_assign_expression(Token token, Expression *lhs, Expression *rhs);
+    Assign_Expression *parse_assign_expression(Token token, Variable *variable, Expression *expression);
+    Move_Expression *parse_move_expression(Token token, Variable *variable, Expression *expression);
+    
     Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Assign_Expression *parse_designated_assign_expression(Token token, Variable *variable,
                                                           Expression *expression);

@@ -34,33 +34,37 @@ void Allocator::allocate()
     }
 }
 
+#define Round_Up(x, y) ((x + y - 1) & ~(y - 1))
+
 int64 Allocator::create_function_stack_push(Variable *variable, int64 offset, int64 alignment)
 {
     int64 size = variable->type.size;
-    int64 address = ((offset + alignment - 1) & ~(alignment - 1)) + size;
+    int64 address = Round_Up(offset, alignment);
 
     if (variable->mode & Define_Parameter) {
         // __cdecl function: parameters are at the top of the invoker function
         // we offset by 16 because we pushed the return address and the bsp
         variable->address = +(address + 16);
     } else {
-        variable->address = -(address);
+        variable->address = -(address + size);
     }
 
     if (variable->type.kind & (Type_Struct | Type_Union)) {
         Struct_Statement *struct_statement = variable->type.struct_statement;
+
         for (Variable *member : views::values(struct_statement->members)) {
             member->location = variable->location;
-            create_function_stack_push(member, offset, alignment);
+            member->mode |= variable->mode;
 
-            // Union does not have offset between members
             if (variable->type.kind & Type_Struct) {
-                offset += member->type.size;
+                offset = create_function_stack_push(member, offset, alignment);
+            }
+            if (variable->type.kind & Type_Union) {
+                create_function_stack_push(member, offset, alignment);
             }
         }
     }
-
-    return address;
+    return address + size;
 }
 
 void Allocator::create_function_stack(Function_Statement *function_statement)
@@ -68,32 +72,32 @@ void Allocator::create_function_stack(Function_Statement *function_statement)
     if (!function_statement->scope)
         return;
 
-    Function *function = function_statement->function;
-    size_t offset;
-    size_t alignment;
-
-    const auto on_stack = [](Variable *variable) -> bool {
+    auto on_stack = [](Variable *variable) -> bool {
         return variable->location & Source_Stack;
     };
 
-    offset = 0, alignment = 0;
-    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
-        alignment = std::max(alignment, parameter->variable->type.alignment());
-    }
-    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
-        offset = create_function_stack_push(parameter->variable, offset, alignment);
-    }
-    function->invoke_size = offset;
+    Function *function = function_statement->function;
+    size_t offset = 0;
 
-    offset = 0, alignment = 0;
+    // offset = 0, alignment = 0;
+    // for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter =
+    // parameter->next) { alignment = std::max(alignment, parameter->variable->type.alignment());
+    // }
+
+    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
+        offset += create_function_stack_push(parameter->variable, offset, 8);
+    }
+    function->invoke_size = Round_Up(offset, 8);
+
+    size_t alignment = 0;
+    offset = 0;
     for (Variable *variable : function->locals | views::filter(on_stack)) {
         alignment = std::max(alignment, variable->type.alignment());
     }
     for (Variable *variable : function->locals | views::filter(on_stack)) {
-        offset = create_function_stack_push(variable, offset, alignment);
+        offset += create_function_stack_push(variable, offset, alignment);
     }
-
-    function->stack_size = -offset;
+    function->stack_size = Round_Up(offset, 8);
 }
 
 void Allocator::parse_begin_of_use(Variable *variable)
@@ -101,16 +105,20 @@ void Allocator::parse_begin_of_use(Variable *variable)
     if (variable->location != Source_None) {
         return;
     }
-    if (variable->type.kind & (Type_Struct | Type_Union)) {
+
+    else if (variable->type.kind & (Type_Struct | Type_Union) or variable->mode & Define_Parameter) {
         variable->location = Source_Stack;
     }
-    if (variable->type.kind & Type_Gpr and gpr_count != 0) {
+
+    else if (variable->type.kind & Type_Gpr and gpr_count != 0) {
         variable->location = Source_Gpr, variable->gpr = gpr_count--;
     }
-    if (variable->type.kind & Type_Fpr and fpr_count != 0) {
+
+    else if (variable->type.kind & Type_Fpr and fpr_count != 0) {
         variable->location = Source_Fpr, variable->fpr = fpr_count--;
     }
-    if (!variable->location) {
+
+    else if (!variable->location) {
         variable->location = Source_Stack;
     }
 }
@@ -236,8 +244,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Invoke: {
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
-        invoke_expression->use_time = uses_timeline.size();
         parse_expression_use_ranges(invoke_expression->arguments);
+        invoke_expression->use_time = std::max((int64)uses_timeline.size() - 1, 0L);
         break;
     }
 
