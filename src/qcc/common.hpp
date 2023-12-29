@@ -3,13 +3,14 @@
 
 #include "error.hpp"
 #include <cstdint>
+#include <filesystem>
 #include <fmt/core.h>
 #include <ranges>
 #include <source_location>
 
 namespace qcc
 {
-
+namespace fs = std::filesystem;
 namespace views = std::views;
 namespace ranges = std::ranges;
 

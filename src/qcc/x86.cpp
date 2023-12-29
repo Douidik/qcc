@@ -39,9 +39,9 @@ X86::X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &
 
 void X86::make()
 {
-    fmt::println("BITS 64");
-    fmt::println("section .text");
-    fmt::println("    global _start");
+    fmt::println(stream, "BITS 64");
+    fmt::println(stream, "section .text");
+    fmt::println(stream, "    global _start");
     make_statement(ast.main_statement);
 }
 
@@ -212,7 +212,7 @@ void X86::make_expression(Expression *expression, const X86_Register &regs)
 
 void X86::make_int_expression(Int_Expression *int_expression, const X86_Register &regs)
 {
-    fmt::println("    mov {}, {}", regs[8], int_expression->value);
+    fmt::println(stream, "    mov {}, {}", regs[8], int_expression->value);
 }
 
 void X86::make_id_expression(Id_Expression *id_expression, const X86_Register &regs)
@@ -322,7 +322,7 @@ void X86::make_binary_expression(Binary_Expression *binary_expression, const X86
         make_variable_set(ast.decode_designated_expression(binary_expression), Rax);
     }
     if (regs != Rax) {
-        fmt::println("    mov {}, rax", regs[8]);
+        fmt::println(stream, "    mov {}, rax", regs[8]);
     }
 }
 
@@ -382,7 +382,7 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
         Assign_Expression *assign_expression = argument_expression->assign_expression;
         for (; assign_expression != NULL; assign_expression = assign_expression->next) {
-	    make_expression(assign_expression->expression, Rax);
+            make_expression(assign_expression->expression, Rax);
             fmt::println(stream, "    push rax");
         }
     }
@@ -490,26 +490,27 @@ void X86::make_source(Source *source, int64 size, int64 offset)
 void X86::make_variable_push(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    push "), make_source(variable, 8, offset), fmt::print("\n");
+    fmt::print(stream, "    push "), make_source(variable, 8, offset), fmt::println(stream, "");
 }
 
 void X86::make_variable_pop(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    pop "), make_source(variable, 8, offset), fmt::print("\n");
+    fmt::print(stream, "    pop "), make_source(variable, 8, offset), fmt::println(stream, "");
 }
 
 void X86::make_variable_get(Object *object, const X86_Register &regs, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov {}", regs[size]);
-    fmt::print(", "), make_source(variable, size, offset), fmt::print("\n");
+    fmt::print(stream, "    mov {}", regs[size]);
+    fmt::print(stream, ", "), make_source(variable, size, offset), fmt::println(stream, "");
 }
 
 void X86::make_variable_set(Object *object, const X86_Register &regs, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    mov "), make_source(variable, size, offset), fmt::print(", {}\n", regs[size]);
+    fmt::print(stream, "    mov "), make_source(variable, size, offset),
+        fmt::println(stream, ", {}", regs[size]);
 }
 
 } // namespace qcc

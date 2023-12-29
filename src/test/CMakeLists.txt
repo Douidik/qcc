@@ -21,6 +21,11 @@ target_link_libraries(
   gtest
 )
 
+target_compile_definitions(
+  qcc-test PRIVATE
+  QCC_TEST_PATH="${CMAKE_SOURCE_DIR}/test/"
+)
+	
 set_target_properties(
   qcc-test PROPERTIES
   CXX_STANDARD 20

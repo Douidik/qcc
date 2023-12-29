@@ -4,7 +4,6 @@
 #include "scan/scanner.hpp"
 #include "scan/syntax_map.hpp"
 #include "x86.hpp"
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sys/wait.h>
@@ -12,7 +11,7 @@
 namespace qcc
 {
 
-int x86_run(std::filesystem::path filepath)
+int x86_run(fs::path filepath)
 {
     std::fstream fstream(filepath);
     if (!fstream.is_open()) {

@@ -1,5 +1,6 @@
 #include "regex_test.hpp"
 #include "scan_test.hpp"
+#include "x86_test.hpp"
 //
 #include <gtest/gtest.h>
 
