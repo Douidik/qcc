@@ -191,6 +191,8 @@ void X86::make_expression(Expression *expression, const X86_Register &regs)
         return make_int_expression((Int_Expression *)expression, regs);
     case Expression_Id:
         return make_id_expression((Id_Expression *)expression, regs);
+    case Expression_Ref:
+        return make_ref_expression((Ref_Expression *)expression, regs);
     case Expression_Invoke:
         return make_invoke_expression((Invoke_Expression *)expression, regs);
     case Expression_Nested:
@@ -216,6 +218,12 @@ void X86::make_int_expression(Int_Expression *int_expression, const X86_Register
 void X86::make_id_expression(Id_Expression *id_expression, const X86_Register &regs)
 {
     Variable *variable = (Variable *)id_expression->object;
+    make_variable_get(variable, regs);
+}
+
+void X86::make_ref_expression(Ref_Expression *ref_expression, const X86_Register &regs)
+{
+    Variable *variable = (Variable *)ref_expression->object;
     make_variable_get(variable, regs);
 }
 
@@ -374,7 +382,7 @@ void X86::make_invoke_expression(Invoke_Expression *invoke_expression, const X86
     for (; argument_expression != NULL; argument_expression = argument_expression->previous) {
         Assign_Expression *assign_expression = argument_expression->assign_expression;
         for (; assign_expression != NULL; assign_expression = assign_expression->next) {
-            make_expression(assign_expression->expression, Rax);
+	    make_expression(assign_expression->expression, Rax);
             fmt::println(stream, "    push rax");
         }
     }
@@ -400,8 +408,10 @@ void X86::make_nested_expression(Nested_Expression *nested_expression, const X86
 
 void X86::make_assign_expression(Assign_Expression *assign_expression, const X86_Register &regs, int64 offset)
 {
-    make_expression(assign_expression->expression, regs);
-    make_variable_set(assign_expression->variable, regs, offset);
+    if (assign_expression->type->kind & ~(Type_Struct | Type_Union)) {
+        make_expression(assign_expression->expression, regs);
+        make_variable_set(assign_expression->variable, regs, offset);
+    }
 
     if (assign_expression->next != NULL)
         make_assign_expression(assign_expression->next, regs);
@@ -422,7 +432,7 @@ void X86::make_deref_expression(Deref_Expression *deref_expression, const X86_Re
 
         switch (variable->location) {
         case Source_Stack:
-            fmt::println(stream, "    mov {}, [rbp - {:+}]", regs[8], variable->address);
+            fmt::println(stream, "    mov {}, [rbp {:+}]", regs[8], variable->address);
             fmt::println(stream, "    mov {}, [{}]", regs[8], regs[8]);
             break;
         default:
@@ -443,7 +453,7 @@ void X86::make_address_expression(Address_Expression *address_expression, const 
 
         switch (variable->location) {
         case Source_Stack:
-            fmt::println(stream, "    lea {}, [rpb - {}]", regs[8], variable->address);
+            fmt::println(stream, "    lea {}, [rbp {:+}]", regs[8], variable->address);
             break;
         default:
             qcc_assert("TODO! make_address_expression for this variable source type", 0);
@@ -480,13 +490,13 @@ void X86::make_source(Source *source, int64 size, int64 offset)
 void X86::make_variable_push(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    push "), make_source(variable, size, offset), fmt::print("\n");
+    fmt::print("    push "), make_source(variable, 8, offset), fmt::print("\n");
 }
 
 void X86::make_variable_pop(Object *object, int64 offset)
 {
     auto [variable, size] = decode_variable_and_size(object);
-    fmt::print("    pop "), make_source(variable, size, offset), fmt::print("\n");
+    fmt::print("    pop "), make_source(variable, 8, offset), fmt::print("\n");
 }
 
 void X86::make_variable_get(Object *object, const X86_Register &regs, int64 offset)

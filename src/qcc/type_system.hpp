@@ -184,7 +184,7 @@ struct Type
         Function *function;
         Type *array_type;
         Type *enum_type;
-        void *data;
+        void *metadata;
     };
 
     size_t alignment();

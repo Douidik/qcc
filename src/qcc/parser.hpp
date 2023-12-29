@@ -64,13 +64,13 @@ struct Parser
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
     Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
-    Dot_Expression *parse_designated_dot_expression(Token token, Variable *record, Variable *member);
+    Dot_Expression *parse_arrow_expression(Token token, Expression *previous);
     Deref_Expression *parse_deref_expression(Token token, Expression *operand);
     Address_Expression *parse_address_expression(Token token, Expression *operand);
 
     Expression *parse_move_or_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Assign_Expression *parse_assign_expression(Token token, Variable *variable, Expression *expression);
-    Move_Expression *parse_move_expression(Token token, Variable *variable, Expression *expression);
+    Ref_Expression *parse_ref_expression(Object *object, Type *type);
     
     Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Assign_Expression *parse_designated_assign_expression(Token token, Variable *variable,

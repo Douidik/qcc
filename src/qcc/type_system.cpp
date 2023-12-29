@@ -58,6 +58,8 @@ Type *Type_System::expression_type(Expression *expression)
         return ((Binary_Expression *)expression)->type;
     case Expression_Cast:
         return ((Cast_Expression *)expression)->into;
+    case Expression_Ref:
+        return ((Ref_Expression *)expression)->type;
     case Expression_Assign:
         return &((Assign_Expression *)expression)->variable->type;
     case Expression_Invoke:
@@ -68,9 +70,13 @@ Type *Type_System::expression_type(Expression *expression)
         return &((Int_Expression *)expression)->type;
     case Expression_Float:
         return &((Float_Expression *)expression)->type;
+    case Expression_Address:
+        return &((Address_Expression *)expression)->type;
+    case Expression_Deref:
+        return ((Deref_Expression *)expression)->type;
     case Expression_Id: {
         Id_Expression *id_expression = (Id_Expression *)expression;
-        return &((Variable *)id_expression->object)->type;
+        return id_expression->object->object_type();
     }
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
@@ -83,14 +89,6 @@ Type *Type_System::expression_type(Expression *expression)
     case Expression_Nested: {
         Nested_Expression *nested_expression = (Nested_Expression *)expression;
         return expression_type(nested_expression->operand);
-    }
-    case Expression_Address: {
-        Address_Expression *address_expression = (Address_Expression *)expression;
-        return &address_expression->type;
-    }
-    case Expression_Deref: {
-        Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        return deref_expression->type;
     }
 
     default:
@@ -276,7 +274,7 @@ Type *Type_System::merge_type(Type *destination, Type *source)
     destination->size = source->size;
     destination->kind = source->kind;
     destination->mods |= source->mods;
-    destination->data = source->data;
+    destination->metadata = source->metadata;
     return destination;
 }
 
@@ -287,7 +285,7 @@ Type *Type_System::orphan_type_push(Type *type)
 
 Type Type_System::clone_type(Ast &ast, Type *type)
 {
-    Type clone{};
+    Type clone = {};
     clone.token = type->token;
     clone.size = type->size;
     clone.kind = type->kind;

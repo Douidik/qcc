@@ -23,6 +23,7 @@ struct Object
 
     virtual ~Object() = default;
     virtual Object_Kind kind() const = 0;
+    virtual Type *object_type() = 0;
 
     virtual bool has_assign() const
     {
@@ -43,6 +44,12 @@ struct Function : Object
     int64 invoke_size;
     int64 stack_size;
     bool is_main;
+
+    Type *object_type() override
+    {
+        qcc_assert("type() for function", 0);
+        return NULL;
+    }
 
     Object_Kind kind() const override
     {
@@ -93,6 +100,11 @@ struct Variable : Object, Source
         return Object_Variable;
     }
 
+    Type *object_type() override
+    {
+        return &type;
+    }
+
     bool has_assign() const override
     {
         return !(type.cvr & Type_Const);
@@ -108,6 +120,11 @@ struct Typedef : Object
 {
     Type type;
 
+    Type *object_type() override
+    {
+        return &type;
+    }
+
     Object_Kind kind() const override
     {
         return Object_Typedef;
@@ -117,6 +134,11 @@ struct Typedef : Object
 struct Record : Object
 {
     Type type;
+
+    Type *object_type() override
+    {
+        return &type;
+    }
 
     Object_Kind kind() const override
     {

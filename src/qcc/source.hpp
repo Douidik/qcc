@@ -18,7 +18,7 @@ enum Source_Location : uint32
 struct Source
 {
     Source_Location location;
-
+    
     union {
         int64 gpr;         // Source_Gpr
         int64 fpr;         // Source_Fpr

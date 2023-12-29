@@ -50,7 +50,7 @@ Type Parser::parse_type()
     type.size = -1;
     bool type_mods_allowed = true;
     bool inside_pointer = false;
-    int128 mask = Token_Mask_Type | Token_Mask_Record | Token_Id;
+    int128 mask = Token_Mask_Type | Token_Mask_Record | Token_Id | Token_Pointer;
 
     while ((token = scan(mask)).ok) {
         if (token.type & Token_Mask_Type_Cvr) {
@@ -334,17 +334,12 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_M
 Define_Statement *Parser::parse_comma_define_statement(Define_Statement *define_statement, Define_Mode mode,
                                                        int128 end_mask)
 {
-    Token sep = expect(Token_Comma | end_mask, "after define statement");
-    if (sep.type & end_mask) {
+    Token comma_or_end = expect(Token_Comma | end_mask, "after define statement");
+    if (comma_or_end.type & end_mask) {
         return NULL;
     }
 
-    Type type = {};
-    if (mode & Define_Parameter)
-        type = parse_type();
-    else
-        type = define_statement->variable->type;
-
+    Type type = (mode & Define_Parameter) ? parse_type() : define_statement->variable->type;
     Token comma_name = scan(Token_Id);
     if (!comma_name.ok and mode & Define_Enum)
         return NULL;
@@ -367,9 +362,7 @@ Function_Statement *Parser::parse_function_statement(Type return_type, Token nam
         function = ast.push(new Function{});
         function->name = name;
         function->return_type = return_type;
-        if (function->name.str == "main") {
-            function->is_main = true;
-        }
+        function->is_main = (function->name.str == "main");
         context_scope()->objects.emplace(name.str, function);
     }
 
@@ -383,7 +376,7 @@ Function_Statement *Parser::parse_function_statement(Type return_type, Token nam
         parse_define_statement(parameter_type, parameter_id, Define_Parameter, NULL, Token_Paren_End);
 
     Function_Statement *function_statement = NULL;
-    Token token = expect(Token_Scope_Begin | Token_Semicolon, "after function signature");
+    Token token = expect(Token_Scope_Begin, "after function signature");
     if (token.type & Token_Scope_Begin) {
         function_statement = ast.push(new Function_Statement{});
         context.push_back(function_statement);
@@ -470,9 +463,9 @@ Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_ty
         parse_define_statement(type, scan(Token_Id), Define_Enum, NULL, Token_Scope_End);
     context_scope()->body.push_back(define_statement);
 
-    uint64 max = 0;
+    int64 max = 0;
     for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
-        max = std::max(max, (uint64)(define->variable)->constant);
+        max = std::max(max, (define->variable)->constant);
     }
     if (max > std::numeric_limits<int32>::max()) {
         for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
@@ -599,12 +592,11 @@ Expression_Statement *Parser::parse_expression_statement()
 Expression *Parser::parse_expression(Expression *previous)
 {
     Expression *expression = NULL;
-
     Token token = scan(Token_Mask_Expression);
+
     if (!token.ok) {
         throw errorf("unexpected token", token);
     }
-
     switch (token.type) {
     case Token_Id:
         expression = parse_id_expression(token);
@@ -612,6 +604,10 @@ Expression *Parser::parse_expression(Expression *previous)
 
     case Token_Dot:
         expression = parse_dot_expression(token, previous);
+        break;
+
+    case Token_Arrow:
+        expression = parse_arrow_expression(token, previous);
         break;
 
     case Token_Char:
@@ -1023,31 +1019,40 @@ Assign_Expression *Parser::parse_designated_assign_expression(Token token, Varia
 Assign_Expression *Parser::parse_struct_copy_expression(Token token, Variable *variable,
                                                         Expression *expression)
 {
-    Variable *expression_variable = (Variable *)ast.decode_designated_expression(expression);
-    if (!expression_variable or expression_variable->kind() != Object_Variable) {
+    Variable *designated_by_expression = (Variable *)ast.decode_designated_expression(expression);
+    if (!designated_by_expression or designated_by_expression->kind() != Object_Variable) {
         throw errorf("cannot assign expression", token);
     }
 
     Struct_Statement *destination = variable->type.struct_statement;
-    Struct_Statement *source = expression_variable->type.struct_statement;
+    Struct_Statement *source = designated_by_expression->type.struct_statement;
 
     if (destination->hash != source->hash) {
         throw errorf("cannot assign expression", token);
     }
 
+    // Reverse the order of the linked-list, easier for pushing the struct
     Assign_Expression *assign_expression = NULL;
     Assign_Expression *assign_expression_previous = NULL;
-    Dot_Expression *dot_expression = NULL;
+    Ref_Expression *ref_expression = NULL;
 
     for (auto [name, _] : source->members) {
-        dot_expression = parse_designated_dot_expression(token, expression_variable, source->members[name]);
+        ref_expression = parse_ref_expression(source->members[name], &source->members[name]->type);
         assign_expression =
-            parse_designated_assign_expression(token, destination->members[name], dot_expression);
+            parse_designated_assign_expression(token, destination->members[name], ref_expression);
 
-        if (assign_expression_previous)
+        if (assign_expression_previous != NULL) {
             assign_expression->next = assign_expression_previous;
+        }
         assign_expression_previous = assign_expression;
     }
+
+    // Assign_Expression *struct_assign_expression = ast.push(new Assign_Expression{});
+    // struct_assign_expression->expression =
+    //     parse_ref_expression(designated_by_expression, &designated_by_expression->type);
+    // struct_assign_expression->variable = variable;
+    // struct_assign_expression->type = &designated_by_expression->type;
+    // struct_assign_expression->next = assign_expression;
 
     return assign_expression;
 }
@@ -1077,40 +1082,36 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
 {
     Dot_Expression *dot_expression = ast.push(new Dot_Expression{});
 
-    dot_expression->record = (Variable *)ast.decode_designated_expression(previous);
-    if (!dot_expression->record or dot_expression->record->kind() & ~Object_Variable) {
-        throw errorf("variable expected before '.'", token);
+    dot_expression->expression = previous;
+    if (!dot_expression->expression) {
+        throw errorf("variable expected for member access", token);
     }
-
-    dot_expression->type = dot_expression->record->type.base();
+    dot_expression->type = type_system.expression_type(dot_expression->expression);
     if (dot_expression->type->kind & ~(Type_Struct | Type_Union)) {
-        throw errorf("struct or union expected before '.'", token);
+        throw errorf("struct or union expected for member access ", token, token.str);
     }
 
-    Token name = expect(Token_Id, "after '.' member access operator");
+    Token name = expect(Token_Id, "after member access operator");
     Struct_Statement *struct_statement = dot_expression->type->struct_statement;
 
     if (!struct_statement->members.contains(name.str)) {
-        std::string type_name = type_system.name(&dot_expression->record->type);
+        std::string type_name = type_system.name(dot_expression->type);
         throw errorf("member '{}.{}' is undeclared", name, type_name, name.str);
     }
 
     dot_expression->member = struct_statement->members[name.str];
     if (!dot_expression->member) {
-        std::string type_name = type_system.name(&dot_expression->record->type);
+        std::string type_name = type_system.name(dot_expression->type);
         throw errorf("member '{}.{}' is not a variable member", name, type_name, name.str);
     }
 
     return dot_expression;
 }
 
-Dot_Expression *Parser::parse_designated_dot_expression(Token token, Variable *record, Variable *member)
+Dot_Expression *Parser::parse_arrow_expression(Token token, Expression *previous)
 {
-    Dot_Expression *dot_expression = ast.push(new Dot_Expression{});
-
-    dot_expression->record = record;
-    dot_expression->member = member;
-    dot_expression->type = record->type.base();
+    Deref_Expression *deref_expression = parse_deref_expression(token, previous);
+    Dot_Expression *dot_expression = parse_dot_expression(token, deref_expression);
     return dot_expression;
 }
 
@@ -1119,20 +1120,14 @@ Deref_Expression *Parser::parse_deref_expression(Token token, Expression *operan
     Deref_Expression *deref_expression = ast.push(new Deref_Expression);
     deref_expression->object = ast.decode_designated_expression(operand);
 
-    switch (deref_expression->object->kind()) {
-    case Object_Variable: {
-        Variable *variable = (Variable *)deref_expression->object;
-        if (variable->type.kind != Type_Pointer) {
-            throw errorf("cannot dereference a non-pointer expression", token);
-        }
-        deref_expression->type = variable->type.pointed_type;
-        break;
+    if (!deref_expression->object) {
+        throw errorf("dereference operand does not designate an object", token);
+    }
+    if (deref_expression->object->object_type()->kind != Type_Pointer) {
+        throw errorf("cannot dereference a non-pointer expression", token);
     }
 
-    default:
-        qcc_assert("TODO! parse_address_expression() does not support object kind", 0);
-    }
-
+    deref_expression->type = deref_expression->object->object_type()->pointed_type;
     return deref_expression;
 }
 
@@ -1140,26 +1135,30 @@ Address_Expression *Parser::parse_address_expression(Token token, Expression *op
 {
     Address_Expression *address_expression = ast.push(new Address_Expression);
     address_expression->object = ast.decode_designated_expression(operand);
-
-    if (!address_expression->object->has_address()) {
-        throw errorf("object is not addressable", token);
+    if (!address_expression->object) {
+        throw errorf("address-to operand does not designate an object", token);
+    }
+    if (address_expression->object->kind() & Object_Variable) {
+	// Once the variable has been explicitly addressed it must have an address
+	Variable *variable = (Variable *)address_expression->object;
+	variable->location = Source_Stack;
     }
 
-    switch (address_expression->object->kind()) {
-    case Object_Variable: {
-        Variable *variable = (Variable *)address_expression->object;
-        address_expression->type = Type{};
-        address_expression->type.kind = Type_Pointer;
-        address_expression->type.size = 8;
-        address_expression->type.pointed_type = &variable->type;
-        break;
-    }
-
-    default:
-        qcc_assert("TODO! parse_address_expression() does not support object kind", 0);
-    }
+    address_expression->type = Type{};
+    address_expression->type.kind = Type_Pointer;
+    address_expression->type.size = 8;
+    address_expression->type.pointed_type = address_expression->object->object_type();
 
     return address_expression;
+}
+
+Ref_Expression *Parser::parse_ref_expression(Object *object, Type *type)
+{
+    Ref_Expression *ref_expression = ast.push(new Ref_Expression);
+
+    ref_expression->object = object;
+    ref_expression->type = type;
+    return ref_expression;
 }
 
 Expression *Parser::cast_if_needed(Token token, Expression *expression, Type *type)

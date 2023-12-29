@@ -26,7 +26,8 @@ enum Expression_Kind : uint32
     Expression_Dot = Bit(uint32, 13),
     Expression_Deref = Bit(uint32, 14),
     Expression_Address = Bit(uint32, 15),
-    Expression_Move = Bit(uint32, 16),
+    // Expression_Move = Bit(uint32, 16),
+    Expression_Ref = Bit(uint32, 16),
 };
 
 enum Expression_Order : uint32
@@ -187,9 +188,11 @@ struct Assign_Expression : Expression
     Expression *expression;
     Type *type;
 
-    // Split assignment to aggregate types into register fit assignments
+    // When assigning aggregate types like structures or arrays
+    // we need to split the assignment into smaller ones to ensure
+    // that the expression fits in a register
     Assign_Expression *next;
-
+    
     Expression_Kind kind() const override
     {
         return Expression_Assign;
@@ -210,7 +213,7 @@ struct Cast_Expression : Expression
 
 struct Dot_Expression : Expression
 {
-    Variable *record;
+    Expression *expression;
     Variable *member;
     Type *type;
 
@@ -242,15 +245,26 @@ struct Address_Expression : Expression
     }
 };
 
-struct Move_Expression : Expression
+// struct Move_Expression : Expression
+// {
+//     Variable *source;
+//     Variable *destination;
+//     size_t size;
+
+//     Expression_Kind kind() const override
+//     {
+//         return Expression_Move;
+//     }
+// };
+
+struct Ref_Expression : Expression
 {
-    Variable *source;
-    Variable *destination;
-    size_t size;
+    Object *object;
+    Type *type;
     
     Expression_Kind kind() const override
     {
-        return Expression_Move;
+        return Expression_Ref;
     }
 };
 

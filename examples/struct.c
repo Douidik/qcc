@@ -20,18 +20,3 @@ int main(void)
     
     return (pos.sum);
 }
-
-/* struct number */
-/* { */
-/*     int n; */
-/* }; */
-
-/* int number_double(struct number num) { */
-/*     return num.n + num.n; */
-/* } */
-
-/* int main(void) { */
-/*     struct number num; */
-/*     num.n = 4; */
-/*     return number_double(num); */
-/* } */

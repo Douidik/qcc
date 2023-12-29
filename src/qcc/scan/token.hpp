@@ -133,7 +133,7 @@ const int128 Token_Mask_Expression =
     Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul | Token_Div | Token_Mod |
     Token_Not | Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R |
     Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq |
-    Token_Paren_Begin | Token_Assign | Token_Dot | Token_Deref;
+    Token_Paren_Begin | Token_Assign | Token_Dot | Token_Arrow | Token_Deref;
 
 const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;
 

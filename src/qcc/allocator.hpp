@@ -17,12 +17,12 @@ struct Use_Range
 struct Allocator
 {
     Ast &ast;
-    uint32 gpr_count;
-    uint32 fpr_count;
+    int32 gpr_count;
+    int32 fpr_count;
     std::unordered_map<Variable *, Use_Range> uses_range;
     std::vector<std::set<Variable *>> uses_timeline;
 
-    Allocator(Ast &ast, uint32 gpr_count, uint32 fpr_count);
+    Allocator(Ast &ast, int32 gpr_count, int32 fpr_count);
     void allocate();
 
     int64 create_function_stack_push(Variable *variable, int64 offset, int64 alignment);

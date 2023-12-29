@@ -8,7 +8,7 @@
 namespace qcc
 {
 
-Allocator::Allocator(Ast &ast, uint32 gpr_count, uint32 fpr_count) :
+Allocator::Allocator(Ast &ast, int32 gpr_count, int32 fpr_count) :
     ast(ast), gpr_count(gpr_count), fpr_count(fpr_count)
 {
 }
@@ -32,6 +32,30 @@ void Allocator::allocate()
         if (statement->kind() & Statement_Function)
             create_function_stack((Function_Statement *)statement);
     }
+    
+    // for (auto [variable, use_range] : uses_range) {
+    //     std::string_view source_typename = "";
+    //     switch (variable->location) {
+    //     case Source_None:
+    //         source_typename = "none";
+    //         break;
+    //     case Source_Stack:
+    //         source_typename = "stack";
+    //         break;
+    //     case Source_Gpr:
+    //         source_typename = "gpr";
+    //         break;
+    //     case Source_Fpr:
+    //         source_typename = "fpr";
+    //         break;
+    // 	default:
+    //         source_typename = "?";
+    //         break;
+    //     }
+
+    //     fmt::println("'{}' ({}: {:+}) [{} {}]", variable->name.str, source_typename, variable->address,
+    //                  use_range.begin, use_range.end);
+    // }
 }
 
 #define Round_Up(x, y) ((x + y - 1) & ~(y - 1))
@@ -78,19 +102,15 @@ void Allocator::create_function_stack(Function_Statement *function_statement)
 
     Function *function = function_statement->function;
     size_t offset = 0;
+    size_t alignment = 0;
 
-    // offset = 0, alignment = 0;
-    // for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter =
-    // parameter->next) { alignment = std::max(alignment, parameter->variable->type.alignment());
-    // }
-
-    for (Define_Statement *parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
+    Define_Statement *parameter = function->parameters;
+    for (; parameter != NULL; parameter = parameter->next) {
         offset += create_function_stack_push(parameter->variable, offset, 8);
     }
     function->invoke_size = Round_Up(offset, 8);
 
-    size_t alignment = 0;
-    offset = 0;
+    offset = 0, alignment = 0;
     for (Variable *variable : function->locals | views::filter(on_stack)) {
         alignment = std::max(alignment, variable->type.alignment());
     }
@@ -274,8 +294,10 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
         Assign_Expression *assign_expression = (Assign_Expression *)expression;
         parse_new_use(assign_expression->variable);
         parse_expression_use_ranges(assign_expression->expression);
-        if (assign_expression->next != NULL)
+
+        if (assign_expression->next != NULL) {
             parse_expression_use_ranges(assign_expression->next);
+        }
         break;
     }
 
@@ -287,7 +309,7 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
-        parse_new_use(dot_expression->record);
+        parse_expression_use_ranges(dot_expression->expression);
         break;
     }
 
@@ -303,6 +325,14 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
         Address_Expression *address_expression = (Address_Expression *)expression;
         if (address_expression->object->kind() & Object_Variable) {
             parse_new_use((Variable *)address_expression->object);
+        }
+        break;
+    }
+
+    case Expression_Ref: {
+        Ref_Expression *ref_expression = (Ref_Expression *)expression;
+        if (ref_expression->object->kind() & Object_Variable) {
+            parse_new_use((Variable *)ref_expression->object);
         }
         break;
     }
