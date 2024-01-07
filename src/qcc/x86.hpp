@@ -39,15 +39,7 @@ struct X86 : Asm
     void emit_source_operand(const Source *source, int64 size);
     void emit_push(const Source *source);
     void emit_pop(const Source *source);
-    void emit_get(const Source *source, Register regs, int64 size);
-    void emit_set(const Source *source, Register regs, int64 size);
     void emit_mov(const Source *destination, const Source *source, int64 size);
-
-    // void emit_source(const Source *source, int64 size, int64 offset = 0);
-    // void emit_variable_push(Object *object, int64 offset = 0);
-    // void emit_variable_pop(Object *object, int64 offset = 0);
-    // void emit_variable_get(Object *object, Register regs, int64 offset = 0);
-    // void emit_variable_set(Object *object, Register regs, int64 offset = 0);
 };
 
 } // namespace qcc

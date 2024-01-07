@@ -122,7 +122,7 @@ void X86::emit_define_statement(Define_Statement *define_statement)
 
     Variable *variable = define_statement->variable;
     int64 size = variable->type.size;
-    emit_set(variable, Rax, size);
+    emit_mov(variable, &Rax, size);
 
     if (define_statement->next != NULL)
         emit_define_statement(define_statement->next);
@@ -210,13 +210,13 @@ void X86::emit_int_expression(Int_Expression *int_expression, Register regs)
 void X86::emit_id_expression(Id_Expression *id_expression, Register regs)
 {
     Variable *variable = (Variable *)id_expression->object;
-    emit_get(variable, regs, variable->type.size);
+    emit_mov(&regs, variable, variable->type.size);
 }
 
 void X86::emit_ref_expression(Ref_Expression *ref_expression, Register regs)
 {
-    Variable *variable = (Variable *)ref_expression->object;
-    emit_get(variable, regs, variable->type.size);
+    Object *object = (Variable *)ref_expression->object;
+    emit_mov(&regs, object->source(), object->object_type()->size);
 }
 
 // Hack! for now, we just push rax before fetching the rhs operand, we emit the binary
@@ -320,7 +320,7 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
     if (binary_expression->operation.type & (Token_Mask_Binary_Assign)) {
         Object *object = ast.decode_designated_expression(binary_expression);
         int64 size = object->object_type()->size;
-        emit_set(object->source(), Rax, size);
+        emit_mov(object->source(), &Rax, size);
     }
     if (regs.gpr != Rax.gpr) {
         fmt::println(stream, "    mov {}, rax", regs[8]);
@@ -359,7 +359,7 @@ void X86::emit_unary_expression(Unary_Expression *unary_expression, Register reg
     if (is_increment and unary_expression->order == Expression_Rhs) {
         Object *object = ast.decode_designated_expression(unary_expression);
         int64 size = object->object_type()->size;
-        emit_set(object->source(), Rax, size);
+        emit_mov(object->source(), &Rax, size);
     }
 }
 
@@ -435,14 +435,14 @@ void X86::emit_assign_expression(Assign_Expression *assign_expression, Register 
         if (in_invoke_expression)
             emit_push(&regs);
         else
-            emit_set(&destination, regs, size);
+            emit_mov(&destination, &regs, size);
     }
 }
 
 void X86::emit_dot_expression(Dot_Expression *dot_expression, Register regs)
 {
     Source source = emit_expression_source(dot_expression, regs);
-    emit_get(&source, regs, dot_expression->member->type.size);
+    emit_mov(&regs, &source, dot_expression->member->type.size);
 }
 
 Source X86::emit_expression_source(Expression *expression, Register regs)
@@ -479,7 +479,7 @@ Source X86::emit_expression_source(Expression *expression, Register regs)
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        emit_get(deref_expression->object->source(), regs, 8);
+        emit_mov(&regs, deref_expression->object->source(), 8);
         return regs.with_indirection();
     }
 
@@ -493,10 +493,12 @@ void X86::emit_deref_expression(Deref_Expression *deref_expression, Register reg
 {
     Source *address_source = deref_expression->object->source();
     qcc_assert(address_source != NULL, "object is not sourced");
-    size_t size = deref_expression->type->size;
-
     emit_mov(&regs, address_source, 8);
-    emit_set(&regs, regs.with_indirection(), size);
+    
+    
+    size_t size = deref_expression->type->size;
+    Register indirect = regs.with_indirection();
+    emit_mov(&regs, &indirect, size);
 }
 
 void X86::emit_address_expression(Address_Expression *address_expression, Register regs)
@@ -544,24 +546,6 @@ void X86::emit_pop(const Source *source)
 {
     fmt::print(stream, "    pop ");
     emit_source_operand(source, 8);
-    fmt::println(stream, "");
-}
-
-void X86::emit_get(const Source *source, Register regs, int64 size)
-{
-    fmt::print(stream, "    mov ");
-    emit_source_operand(&regs, size);
-    fmt::print(stream, ", ");
-    emit_source_operand(source, size);
-    fmt::println(stream, "");
-}
-
-void X86::emit_set(const Source *source, Register regs, int64 size)
-{
-    fmt::print(stream, "    mov ");
-    emit_source_operand(source, size);
-    fmt::print(stream, ", ");
-    emit_source_operand(&regs, size);
     fmt::println(stream, "");
 }
 
