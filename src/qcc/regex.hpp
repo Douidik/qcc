@@ -5,7 +5,6 @@
 #include "regex/match.hpp"
 #include "regex/node.hpp"
 #include "regex/parser.hpp"
-#include <vector>
 
 namespace qcc::regex
 {
@@ -44,6 +43,7 @@ inline regex::Regex operator""_rx(const char *src, size_t)
 namespace qcc
 {
 using regex::Regex;
+typedef regex::Match Regex_Match;
 } // namespace qcc
 
 #endif

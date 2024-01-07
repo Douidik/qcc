@@ -38,6 +38,8 @@ enum Expression_Order : uint32
 
 struct Expression
 {
+    bool endpoint = false;
+    
     virtual ~Expression() = default;
     virtual Expression_Kind kind() const = 0;
 };
@@ -184,15 +186,10 @@ struct Nested_Expression : Expression
 
 struct Assign_Expression : Expression
 {
-    Variable *variable;
-    Expression *expression;
+    Expression *lhs;
+    Expression *rhs;
     Type *type;
 
-    // When assigning aggregate types like structures or arrays
-    // we need to split the assignment into smaller ones to ensure
-    // that the expression fits in a register
-    Assign_Expression *next;
-    
     Expression_Kind kind() const override
     {
         return Expression_Assign;
@@ -215,7 +212,7 @@ struct Dot_Expression : Expression
 {
     Expression *expression;
     Variable *member;
-    Type *type;
+    Struct_Statement *struct_statement;
 
     Expression_Kind kind() const override
     {
@@ -261,7 +258,7 @@ struct Ref_Expression : Expression
 {
     Object *object;
     Type *type;
-    
+
     Expression_Kind kind() const override
     {
         return Expression_Ref;

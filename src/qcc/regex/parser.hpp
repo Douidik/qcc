@@ -1,8 +1,6 @@
 #ifndef QCC_REGEX_PARSER_HPP
 #define QCC_REGEX_PARSER_HPP
 
-#include "common.hpp"
-#include "error.hpp"
 #include "node.hpp"
 #include "state.hpp"
 #include <fmt/format.h>

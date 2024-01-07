@@ -8,5 +8,5 @@ int main(void)
     }
 
     int w = 4;
-    return x + w;
+    return x + w == 5;
 }

@@ -1,7 +1,8 @@
 #include "state.hpp"
 #include "node.hpp"
 
-namespace qcc::regex {
+namespace qcc::regex
+{
 
 size_t State::submit(std::string_view expr, size_t n) const
 {

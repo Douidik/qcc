@@ -18,5 +18,5 @@ int main(void)
     pos.y = 49;
     pos.sum = v2_sum(2, pos);
     
-    return (pos.sum);
+    return (pos.sum) == 102;
 }

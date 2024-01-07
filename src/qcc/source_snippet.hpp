@@ -7,7 +7,7 @@
 namespace qcc
 {
 
-std::string make_source_snippet(std::string_view source, Token token, std::string_view fmt = "", auto... args)
+std::string make_source_snippet(Token token, std::string_view fmt = "", auto... args)
 {
     auto digits_count = [](int64 number) -> size_t {
         size_t digits = 1;
@@ -16,6 +16,7 @@ std::string make_source_snippet(std::string_view source, Token token, std::strin
         return digits;
     };
 
+    std::string_view source = token.source;
     uint32 line_number = std::count(source.begin(), token.str.begin(), '\n');
     auto rbegin = std::find(token.str.rend(), source.rend(), '\n');
     auto begin = std::max(rbegin.base(), source.begin());
@@ -27,7 +28,8 @@ std::string make_source_snippet(std::string_view source, Token token, std::strin
   {} | {}
      {:>{}}{:^>{}} {}
 }})",
-                       line_number, std::string_view{begin, end}, "", cursor, "^", token.str.size(), desc);
+                       line_number + 1, std::string_view{begin, end}, "", cursor, "^", token.str.size(),
+                       desc);
 }
 
 } // namespace qcc

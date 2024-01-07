@@ -13,6 +13,7 @@ struct Token
     std::string_view str;
     Token_Type type;
     bool ok;
+    std::string_view source;
     std::string_view type_str;
 };
 
@@ -23,7 +24,6 @@ enum Token_Type : int128
     Token_Blank = Bit(int128, 0),
     Token_Eof = Bit(int128, 1),
     Token_Comment = Bit(int128, 2),
-    Token_Directive = Bit(int128, 3),
     Token_Id = Bit(int128, 4),
 
     Token_Sizeof = Bit(int128, 5),
@@ -96,10 +96,10 @@ enum Token_Type : int128
     Token_Bin_Xor_Assign = Bit(int128, 67),
     Token_Bin_Or_Assign = Bit(int128, 68),
 
-    Token_Bin_Not = Bit(int128, 69),
-    Token_Bin_And = Token_Ampersand,
-    Token_Bin_Or = Bit(int128, 70),
-    Token_Bin_Xor = Bit(int128, 71),
+    Token_Bitwise_Not = Bit(int128, 69),
+    Token_Bitwise_And = Token_Ampersand,
+    Token_Bitwise_Or = Bit(int128, 70),
+    Token_Bitwise_Xor = Bit(int128, 71),
     Token_Shift_L = Bit(int128, 72),
     Token_Shift_R = Bit(int128, 73),
 
@@ -124,20 +124,38 @@ enum Token_Type : int128
     Token_Float_Type = Bit(int128, 89),
     Token_Double_Type = Bit(int128, 90),
 
-    Token_Merged = Bit(int128, 91),
-    Token_Type_End = Bit(int128, 92),
+    Token_Hash_Include = Bit(int128, 91),
+    Token_Hash_Define = Bit(int128, 92),
+    Token_Hash_Undef = Bit(int128, 93),
+    Token_Hash_Ifdef = Bit(int128, 94),
+    Token_Hash_Ifndef = Bit(int128, 95),
+    Token_Hash_Elif = Bit(int128, 96),
+    Token_Hash_Else = Bit(int128, 97),
+    Token_Hash_Endif = Bit(int128, 98),
+
+    Token_Hash_Project_Filepath = Bit(int128, 99),
+    Token_Hash_System_Filepath = Bit(int128, 100),
+
+    Token_Merged = Bit(int128, 101),
+    Token_Type_End = Bit(int128, 102),
 };
 
-const int128 Token_Mask_Expression =
-    Token_Id | Token_Char | Token_String | Token_Int | Token_Int_Bin | Token_Int_Hex | Token_Float |
-    Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul | Token_Div | Token_Mod |
-    Token_Not | Token_Bin_Not | Token_Bin_And | Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R |
-    Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq |
-    Token_Paren_Begin | Token_Assign | Token_Dot | Token_Arrow | Token_Deref;
+const int128 Token_Mask_Each = ~((int128)0);
+
+const int128 Token_Mask_Skip = Token_Blank | Token_Comment;
+
+const int128 Token_Mask_Operator = Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul |
+                                   Token_Div | Token_Mod | Token_Not | Token_Bitwise_Not | Token_Bitwise_And |
+                                   Token_Bitwise_Or | Token_Bitwise_Xor | Token_Shift_L | Token_Shift_R |
+                                   Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater |
+                                   Token_Greater_Eq | Token_And | Token_Or;
+
+const int128 Token_Mask_Expression = Token_Mask_Operator | Token_Id | Token_Char | Token_String | Token_Int |
+                                     Token_Int_Bin | Token_Int_Hex | Token_Float |
+
+                                     Token_Paren_Begin | Token_Assign | Token_Dot | Token_Arrow | Token_Deref;
 
 const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;
-
-const int128 Token_Mask_Each = ~((int128)0);
 
 const int128 Token_Mask_Type = Token_Auto | Token_Long | Token_Short | Token_Volatile | Token_Const |
                                Token_Extern | Token_Register | Token_Static | Token_Signed | Token_Unsigned |
@@ -159,8 +177,12 @@ const int128 Token_Mask_Binary_Assign = Token_Assign | Token_Add_Assign | Token_
 const int128 Token_Mask_Shift = Token_Shift_L | Token_Shift_R | Token_Shift_L_Assign | Token_Shift_R_Assign;
 
 const int128 Token_Mask_Bin = Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
-                              Token_Bin_Xor_Assign | Token_Bin_Or_Assign | Token_Bin_Not | Token_Bin_And |
-                              Token_Bin_Or | Token_Bin_Xor | Token_Shift_L | Token_Shift_R;
+                              Token_Bin_Xor_Assign | Token_Bin_Or_Assign | Token_Bitwise_Not |
+                              Token_Bitwise_And | Token_Bitwise_Or | Token_Bitwise_Xor | Token_Shift_L |
+                              Token_Shift_R;
+
+const int128 Token_Mask_Hash = Token_Hash_Include | Token_Hash_Define | Token_Hash_Undef | Token_Hash_Ifdef |
+                               Token_Hash_Ifndef | Token_Hash_Elif | Token_Hash_Else | Token_Hash_Endif;
 
 static Token operator|(Token lhs, Token rhs)
 {
@@ -199,8 +221,6 @@ constexpr std::string_view token_type_str(Token_Type type)
         return "end-of-file";
     case Token_Comment:
         return "comment";
-    case Token_Directive:
-        return "directive";
     case Token_Id:
         return "identifier";
     case Token_Sizeof:
@@ -311,11 +331,11 @@ constexpr std::string_view token_type_str(Token_Type type)
         return "/";
     case Token_Mod:
         return "%";
-    case Token_Bin_Not:
+    case Token_Bitwise_Not:
         return "~";
-    case Token_Bin_Or:
+    case Token_Bitwise_Or:
         return "|";
-    case Token_Bin_Xor:
+    case Token_Bitwise_Xor:
         return "^";
     case Token_Shift_L:
         return "<<";
@@ -353,6 +373,27 @@ constexpr std::string_view token_type_str(Token_Type type)
         return "float";
     case Token_Double_Type:
         return "double";
+    case Token_Hash_Include:
+        return "#include";
+    case Token_Hash_Define:
+        return "#define";
+    case Token_Hash_Undef:
+        return "#undef";
+    case Token_Hash_Ifdef:
+        return "#ifdef";
+    case Token_Hash_Ifndef:
+        return "#ifndef";
+    case Token_Hash_Elif:
+        return "#elif";
+    case Token_Hash_Else:
+        return "#else";
+    case Token_Hash_Endif:
+        return "#endif";
+    case Token_Hash_Project_Filepath:
+        return "project-filepath";
+    case Token_Hash_System_Filepath:
+        return "system-filepath";
+
     default:
         return "?";
     }

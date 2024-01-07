@@ -7,6 +7,7 @@
 #include "statement.hpp"
 #include <cctype>
 #include <charconv>
+#include <fmt/ranges.h>
 
 namespace qcc
 {
@@ -15,16 +16,15 @@ Parser::Parser(Ast &ast, Scanner &scanner) : ast(ast), scanner(scanner) {}
 
 Statement *Parser::parse()
 {
-    ast.main_statement = new Scope_Statement;
+    ast.main_statement = new Scope_Statement{};
     context.push_back(ast.main_statement);
     parse_scope_statement(ast.main_statement, (Statement_Define | Statement_Function), Token_Eof);
     context.pop_back();
     return ast.main_statement;
 }
 
-void Parser::parse_type_cvr(Type *type, Token token, bool is_pointer_type)
+void Parser::parse_type_cvr(Type *type, Token token, uint32 cvr_allowed)
 {
-
     switch (token.type) {
     case Token_Const:
         type->cvr |= Token_Const;
@@ -33,13 +33,15 @@ void Parser::parse_type_cvr(Type *type, Token token, bool is_pointer_type)
         type->cvr |= Token_Volatile;
         break;
     case Token_Restrict:
-        if (!is_pointer_type) {
-            throw errorf("invalid use of 'restrict' keyword", token);
-        }
         type->cvr |= Token_Restrict;
         break;
     default:
-        qcc_assert("parse_type_cvr() token is not cvr", 0);
+        qcc_assert(0, "cannot cvr token");
+    }
+
+    if (cvr_allowed & ~type->cvr) {
+        std::string_view cvr_disallowed = type_cvr_name(Type_Cvr{cvr_allowed & ~type->cvr});
+        throw errorf("cannot use '{}' on type '{}'", token, cvr_disallowed, type->token.str);
     }
 }
 
@@ -54,7 +56,7 @@ Type Parser::parse_type()
 
     while ((token = scan(mask)).ok) {
         if (token.type & Token_Mask_Type_Cvr) {
-            parse_type_cvr(&type, token, false);
+            parse_type_cvr(&type, token, Type_Const | Type_Volatile);
         }
 
         else if (token.type & (Token_Short | Token_Long | Token_Signed | Token_Unsigned)) {
@@ -111,24 +113,19 @@ Type Parser::parse_type()
         }
 
         else if (token.type & (Token_Struct | Token_Union)) {
-            Type struct_type = parse_struct_type(token);
-            type_system.merge_type(&type, &struct_type);
+            // maybe_struct_type = parse_struct_type(token);
+            type_system.merge_type(&type, parse_struct_type(token));
             type_mods_allowed = false;
             mask &= ~Token_Id;
         }
-
-        // else if (token.type & Token_Mask_Record) {
-        //     Record_Statement *record_statement = parse_record_statement(token);
-        //     type_system.merge_type(&type, record_statement->type);
-        //     type_mods_allowed = false;
-        //     mask &= ~Token_Id;
-        // }
 
         else if (token.type & Token_Pointer) {
             inside_pointer = true;
             mask = 0;
         }
-        type.token |= token;
+
+        if (type.token.type & Token_Mask_Skip)
+            type.token |= token;
     }
 
     if (!type_mods_allowed and type.mods != 0)
@@ -140,12 +137,16 @@ Type Parser::parse_type()
         type.kind = Type_Int;
     if (type.kind & Type_Scalar and type.size == -1)
         type.size = type_system.scalar_size(type.kind, type.mods);
-    if (type.kind & Type_Record and type.mods != 0)
-        throw errorf("type modifiers are not allowed in record type declaration", type.token);
     if (type.kind & Type_Void)
         type.size = 0;
     if (type.kind & ~(Type_Char | Type_Int) and type.mods != 0)
         throw errorf("cannot declare type '{}' with modifiers", token, token.str);
+    if (type.kind & Type_Int and !(type.mods & Type_Unsigned))
+        type.mods |= Type_Signed;
+    // if (maybe_struct_type != NULL and !inside_pointer) {
+    // Type struct_type = type_system.clone_type(ast, maybe_struct_type);
+    // type_system.merge_type(&type, &struct_type);
+    // }
 
     return inside_pointer ? parse_pointer_type(type) : type;
 }
@@ -160,13 +161,13 @@ Type Parser::parse_pointer_type(Type pointed_type)
 
     Token token_cvr = {};
     while ((token_cvr = scan(Token_Mask_Type_Cvr)).ok) {
-        parse_type_cvr(&type, token_cvr, false);
+        parse_type_cvr(&type, token_cvr, Type_Const | Type_Volatile | Type_Restrict);
     }
 
     return scan(Token_Pointer).ok ? parse_pointer_type(type) : type;
 }
 
-Type Parser::parse_struct_type(Token keyword)
+Type *Parser::parse_struct_type(Token keyword)
 {
     Token name = scan(Token_Id);
     Token scope_begin = scan(Token_Scope_Begin);
@@ -190,10 +191,17 @@ Type Parser::parse_struct_type(Token keyword)
         record->type.struct_statement = parse_struct_statement(keyword);
         record->type.size = type_system.struct_size(&record->type);
 
+        int64 alignment = record->type.alignment();
+        int64 offset = 0;
+        for (auto [_, member] : record->type.struct_statement->members) {
+            member->struct_offset = Round_Up(offset, alignment);
+            offset += member->type.size;
+        }
+
         context_scope()->records[name.str] = record;
     }
 
-    return type_system.clone_type(ast, &record->type);
+    return &record->type;
 }
 
 Struct_Statement *Parser::parse_struct_statement(Token keyword)
@@ -203,16 +211,16 @@ Struct_Statement *Parser::parse_struct_statement(Token keyword)
     struct_statement->hash = (uint64)struct_statement;
     context.push_back(struct_statement);
 
-    Define_Mode define_mode = {};
+    Define_Env define_env = {};
     if (keyword.type & Token_Struct)
-        define_mode = Define_Struct;
+        define_env = Define_Struct;
     if (keyword.type & Token_Union)
-        define_mode = Define_Union;
+        define_env = Define_Union;
 
     while (!peek_until(Token_Scope_End).ok) {
         Type type = parse_type();
         Token name = scan(Token_Id);
-        parse_define_statement(type, name, define_mode, NULL, Token_Semicolon);
+        parse_define_statement(type, name, define_env, NULL, Token_Semicolon);
     }
 
     expect(Token_Scope_End, "after struct scope statement");
@@ -224,7 +232,7 @@ Statement *Parser::parse_statement()
 {
     Token token = peek(Token_Mask_Each);
 
-    // TODO! nested scope statement
+    // Todo! nested scope statement
     // if (token.type & Token_Scope_Begin)
     //     return parse_scope_statement(Token_Scope_End);
     if (token.type & Token_If)
@@ -246,7 +254,7 @@ Statement *Parser::parse_statement()
     if (token.type & Token_Mask_Expression)
         return parse_expression_statement();
 
-    qcc_assert("non-reachable", false);
+    qcc_todo("parse statement kind");
     return NULL;
 }
 
@@ -261,7 +269,7 @@ Statement *Parser::parse_define_or_function_statement()
         return parse_define_statement(type, name, Define_Variable, NULL, Token_Semicolon);
 }
 
-Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_Mode mode,
+Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_Env env,
                                                  Define_Statement *previous, int128 end_mask)
 {
     if (name.type & Token_Semicolon)
@@ -270,12 +278,12 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_M
     Define_Statement *define_statement = ast.push(new Define_Statement{});
     Variable *variable = ast.push(new Variable{});
     define_statement->variable = variable;
-    variable->mode = mode;
+    variable->env = env;
     variable->name = name;
     variable->type = type;
 
     if (type.kind & Type_Void) {
-        if (mode & Define_Parameter) {
+        if (env & Define_Parameter) {
             expect(Token_Paren_End, "after void function parameter");
             return NULL;
         }
@@ -286,52 +294,52 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_M
 
     if (!variable->name.ok) {
         variable->name.str = "(anonymous)";
-        define_statement->next = parse_comma_define_statement(define_statement, mode, end_mask);
+        define_statement->next = parse_comma_define_statement(define_statement, env, end_mask);
         context.pop_back();
         return define_statement;
     }
 
-    if (mode & (Define_Variable | Define_Enum) and scan(Token_Assign).ok) {
-        define_statement->expression = parse_expression(NULL);
+    if (env & (Define_Variable | Define_Enum) and scan(Token_Assign).ok) {
+        define_statement->expression = parse_expression();
     }
-    if (mode & (Define_Variable | Define_Enum)) {
+    if (env & (Define_Variable | Define_Enum)) {
         // Scope-wise check of duplicate
         if (context_scope()->object(name.str) != NULL)
             throw errorf("redefinition of '{}'", name, name.str);
     }
-    if (mode & (Define_Struct | Define_Union | Define_Parameter)) {
+    if (env & (Define_Struct | Define_Union | Define_Parameter)) {
         // Local-wise check of duplicate
         if (context_scope()->objects.contains(name.str))
             throw errorf("redefinition of '{}'", name, name.str);
     }
 
-    if (mode & Define_Enum) {
-        int64 &constant = variable->constant;
+    if (env & Define_Enum) {
+        int64 &constant = variable->enum_constant;
         if (define_statement->expression != NULL) {
-            constant = parse_constant(name, define_statement->expression);
+            variable->enum_constant = parse_constant(name, define_statement->expression);
         } else {
-            constant = previous != NULL ? previous->variable->constant + 1 : 0;
+            variable->enum_constant = previous != NULL ? previous->variable->enum_constant + 1 : 0;
         }
     }
 
     Function_Statement *function_statement = (Function_Statement *)context_of(Statement_Function);
-    if (function_statement != NULL and mode != Define_Parameter) {
+    if (function_statement != NULL and env != Define_Parameter) {
         function_statement->function->locals.push_back(variable);
     }
 
-    if (mode & (Define_Struct | Define_Union)) {
+    if (env & (Define_Struct | Define_Union)) {
         Struct_Statement *struct_statement = (Struct_Statement *)context_of(Statement_Struct);
         struct_statement->members[name.str] = define_statement->variable;
     } else {
         context_scope()->objects.emplace(name.str, define_statement->variable);
     }
 
-    define_statement->next = parse_comma_define_statement(define_statement, mode, end_mask);
+    define_statement->next = parse_comma_define_statement(define_statement, env, end_mask);
     context.pop_back();
     return define_statement;
 }
 
-Define_Statement *Parser::parse_comma_define_statement(Define_Statement *define_statement, Define_Mode mode,
+Define_Statement *Parser::parse_comma_define_statement(Define_Statement *define_statement, Define_Env mode,
                                                        int128 end_mask)
 {
     Token comma_or_end = expect(Token_Comma | end_mask, "after define statement");
@@ -376,7 +384,7 @@ Function_Statement *Parser::parse_function_statement(Type return_type, Token nam
         parse_define_statement(parameter_type, parameter_id, Define_Parameter, NULL, Token_Paren_End);
 
     Function_Statement *function_statement = NULL;
-    Token token = expect(Token_Scope_Begin, "after function signature");
+    Token token = expect(Token_Scope_Begin | Token_Semicolon, "after function signature");
     if (token.type & Token_Scope_Begin) {
         function_statement = ast.push(new Function_Statement{});
         context.push_back(function_statement);
@@ -412,49 +420,6 @@ Scope_Statement *Parser::parse_scope_statement(Scope_Statement *scope_statement,
     return scope_statement;
 }
 
-// Record_Statement *Parser::parse_record_statement(Token keyword)
-// {
-//     Record_Statement *record_statement = ast.push(new Record_Statement{});
-//     context.push_back(record_statement);
-
-//     Token name = scan(Token_Id);
-//     Type_Kind type_kind = token_to_type_kind(keyword.type);
-//     Record *record = context_scope()->record(type_kind, name.str);
-//     Token scope_begin = scan(Token_Scope_Begin);
-
-//     if (record != NULL and record->type.kind != type_kind) {
-//         throw errorf("was previously defined as '{}'", keyword | name, keyword.str,
-//                      type_kind_name(record->type.kind));
-//     }
-//     if (record != NULL and record->type.struct_statement != NULL and scope_begin.ok) {
-//         throw errorf("redefinition of {} '{}'", keyword | name | scope_begin, keyword.str, name.str);
-//     }
-//     if (scope_begin.ok) {
-//         record = ast.push(new Record{});
-//         Type *type = &record->type;
-//         type->kind = token_to_type_kind(keyword.type);
-
-//         if (keyword.type & (Token_Struct | Token_Union)) {
-//             type->scope = parse_struct_scope_statement(keyword);
-//             type->size = type_system.struct_size(type);
-//         }
-//         if (keyword.type & (Token_Enum)) {
-//             Type *enum_type = NULL;
-//             type->scope = parse_enum_scope_statement(keyword, enum_type);
-//             type->enum_type = enum_type;
-//             type->size = type->enum_type->size;
-//         }
-
-//         if (name.ok) {
-//             context_scope()->records.emplace(name.str, record);
-//         }
-//     }
-
-//     record_statement->type = &record->type;
-//     context.pop_back();
-//     return record_statement;
-// }
-
 Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_type)
 {
     Type type = type_system.int_type;
@@ -465,7 +430,7 @@ Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_ty
 
     int64 max = 0;
     for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
-        max = std::max(max, (define->variable)->constant);
+        max = std::max(max, define->variable->enum_constant);
     }
     if (max > std::numeric_limits<int32>::max()) {
         for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
@@ -496,7 +461,7 @@ Scope_Statement *Parser::parse_maybe_inlined_scope_statement()
 Expression *Parser::parse_boolean_expression()
 {
     Token paren_begin = expect(Token_Paren_Begin, "before nested boolean expression");
-    Expression *boolean_expression = parse_expression(NULL);
+    Expression *boolean_expression = parse_expression();
     Token paren_end = expect(Token_Paren_End, "after nested boolean expression");
 
     Type *type = type_system.expression_type(boolean_expression);
@@ -508,7 +473,7 @@ Expression *Parser::parse_boolean_expression()
 
 Condition_Statement *Parser::parse_condition_statement()
 {
-    qcc_assert("expected 'if' or 'else' token", scan(Token_If | Token_Else).ok);
+    qcc_assert(scan(Token_If | Token_Else).ok, "expected 'if' or 'else' token");
 
     Condition_Statement *condition_statement = ast.push(new Condition_Statement{});
     context.push_back(condition_statement);
@@ -523,7 +488,7 @@ Condition_Statement *Parser::parse_condition_statement()
 
 While_Statement *Parser::parse_while_statement()
 {
-    qcc_assert("expected 'while' token", scan(Token_While).ok);
+    qcc_assert(scan(Token_While).ok, "expected 'while' token");
 
     While_Statement *while_statement = ast.push(new While_Statement{});
     context.push_back(while_statement);
@@ -535,17 +500,17 @@ While_Statement *Parser::parse_while_statement()
 
 For_Statement *Parser::parse_for_statement()
 {
-    qcc_assert("expected 'for' token", scan(Token_For).ok);
+    qcc_assert(scan(Token_For).ok, "expected 'for' token");
 
     For_Statement *for_statement = ast.push(new For_Statement{});
     context.push_back(for_statement);
 
     Token paren_begin = expect(Token_Paren_Begin, "before init expression");
-    for_statement->init = parse_expression(NULL);
+    for_statement->init = parse_expression();
     Token semicolon_init = expect(Token_Paren_Begin, "after init expression");
-    for_statement->boolean = parse_expression(NULL);
+    for_statement->boolean = parse_expression();
     Token semicolon_boolean = expect(Token_Paren_Begin, "after boolean expression");
-    for_statement->loop = parse_expression(NULL);
+    for_statement->loop = parse_expression();
     Token paren_end = expect(Token_Paren_Begin, "after loop expression");
     for_statement->statement = parse_maybe_inlined_scope_statement();
 
@@ -553,7 +518,7 @@ For_Statement *Parser::parse_for_statement()
     return for_statement;
 }
 
-// TODO! void return statement
+// Todo! void return statement
 Return_Statement *Parser::parse_return_statement()
 {
     Return_Statement *return_statement = ast.push(new Return_Statement{});
@@ -566,7 +531,7 @@ Return_Statement *Parser::parse_return_statement()
     }
 
     return_statement->function = function_statement->function;
-    return_statement->expression = parse_expression(NULL);
+    return_statement->expression = parse_expression();
 
     Type *return_type = &return_statement->function->return_type;
     return_statement->expression = cast_if_needed(keyword, return_statement->expression, return_type);
@@ -580,16 +545,13 @@ Expression_Statement *Parser::parse_expression_statement()
 {
     Expression_Statement *statement = ast.push(new Expression_Statement{});
     context.push_back(statement);
-
-    while (!peek_until(Token_Semicolon).ok) {
-        statement->expression = parse_expression(statement->expression);
-    }
+    statement->expression = parse_expression(statement->expression);
     expect(Token_Semicolon, "after expression statement");
     context.pop_back();
     return statement;
 }
 
-Expression *Parser::parse_expression(Expression *previous)
+Expression *Parser::parse_expression(Expression *previous, int32 precedence)
 {
     Expression *expression = NULL;
     Token token = scan(Token_Mask_Expression);
@@ -627,12 +589,12 @@ Expression *Parser::parse_expression(Expression *previous)
 
     case Token_Increment:
     case Token_Decrement:
-        expression = parse_increment_expression(token, previous);
+        expression = parse_increment_expression(token, previous, precedence);
         break;
 
     case Token_Not:
-    case Token_Bin_Not:
-        expression = parse_unary_expression(token, Expression_Rhs, parse_expression(NULL));
+    case Token_Bitwise_Not:
+        expression = parse_unary_expression(token, Expression_Rhs, parse_expression(), precedence);
         break;
 
     case Token_Comma:
@@ -640,33 +602,30 @@ Expression *Parser::parse_expression(Expression *previous)
         break;
 
     case Token_Assign:
-        expression = parse_assign_expression(token, previous, parse_expression(NULL));
+        expression = parse_assign_expression(token, previous, parse_expression());
         break;
 
     case Token_Add:
     case Token_Sub:
-        expression =
-            previous != NULL
-                ? (Expression *)parse_binary_expression(token, previous, parse_expression(NULL))
-                : (Expression *)parse_unary_expression(token, Expression_Rhs, parse_expression(NULL));
+        expression = previous != NULL ? (Expression *)parse_binary_expression(token, previous, precedence)
+                                      : (Expression *)parse_unary_expression(token, Expression_Rhs,
+                                                                             parse_expression(), precedence);
         break;
 
     case Token_Star:
-        expression = previous != NULL
-                         ? (Expression *)parse_binary_expression(token, previous, parse_expression(NULL))
-                         : (Expression *)parse_deref_expression(token, parse_expression(NULL));
+        expression = previous != NULL ? (Expression *)parse_binary_expression(token, previous, precedence)
+                                      : (Expression *)parse_deref_expression(token, parse_expression());
         break;
 
     case Token_Ampersand:
-        expression = previous != NULL
-                         ? (Expression *)parse_binary_expression(token, previous, parse_expression(NULL))
-                         : (Expression *)parse_address_expression(token, parse_expression(NULL));
+        expression = previous != NULL ? (Expression *)parse_binary_expression(token, previous, precedence)
+                                      : (Expression *)parse_address_expression(token, parse_expression());
         break;
 
     case Token_Div:
     case Token_Mod:
-    case Token_Bin_Or:
-    case Token_Bin_Xor:
+    case Token_Bitwise_Or:
+    case Token_Bitwise_Xor:
     case Token_Shift_L:
     case Token_Shift_R:
     case Token_Eq:
@@ -685,7 +644,9 @@ Expression *Parser::parse_expression(Expression *previous)
     case Token_Bin_And_Assign:
     case Token_Bin_Xor_Assign:
     case Token_Bin_Or_Assign:
-        expression = parse_binary_expression(token, previous, parse_expression(NULL));
+    case Token_And:
+    case Token_Or:
+        expression = parse_binary_expression(token, previous, precedence);
         break;
 
     case Token_Paren_Begin:
@@ -697,10 +658,12 @@ Expression *Parser::parse_expression(Expression *previous)
         expression = NULL;
     }
 
-    if (!expression)
-        throw errorf("expected expression", token);
-    if (peek(Token_Mask_Expression).ok)
-        return parse_expression(expression);
+    if (!expression) {
+        throw errorf("expression expected", token);
+    }
+    if (!expression->endpoint and peek(Token_Mask_Expression).ok) {
+        return parse_expression(expression, precedence);
+    }
 
     return expression;
 }
@@ -709,7 +672,7 @@ Comma_Expression *Parser::parse_comma_expression(Token token, Expression *expres
 {
     Comma_Expression *comma_expression = ast.push(new Comma_Expression{});
     comma_expression->expression = expression;
-    comma_expression->next = parse_expression(NULL);
+    comma_expression->next = parse_expression();
     if (!comma_expression->expression)
         throw errorf("missing expression before ','", token);
     if (!comma_expression->next)
@@ -825,7 +788,9 @@ String_Expression *Parser::parse_string_expression(Token token)
     return string_expression;
 }
 
-Unary_Expression *Parser::parse_increment_expression(Token operation, Expression *previous)
+// Todo! operator precedence for ++/-- expressions
+// (do not fetch another expression without checking the precedence)
+Expression *Parser::parse_increment_expression(Token operation, Expression *previous, int32 precedence)
 {
     Expression_Order order;
     Expression *operand;
@@ -835,18 +800,26 @@ Unary_Expression *Parser::parse_increment_expression(Token operation, Expression
         operand = previous;
     } else {
         order = Expression_Rhs;
-        operand = parse_expression(NULL);
+        operand = parse_expression();
     }
 
     Object *object = ast.decode_designated_expression(operand);
     if (!object or !object->has_assign()) {
-        throw errorf("operand should be assignable", operation);
+        throw errorf("operand is not assignable", operation);
     }
-    return parse_unary_expression(operation, order, operand);
+    return parse_unary_expression(operation, order, operand, precedence);
 }
 
-Unary_Expression *Parser::parse_unary_expression(Token operation, Expression_Order order, Expression *operand)
+Expression *Parser::parse_unary_expression(Token operation, Expression_Order order, Expression *operand,
+                                           int32 precedence)
 {
+    int32 precedence_now = unary_operator_precedence(operation.type, order);
+    if (precedence_now >= precedence) {
+        operand->endpoint = true;
+        enqueue(operation);
+        return operand;
+    }
+
     Unary_Expression *unary_expression = ast.push(new Unary_Expression{});
     unary_expression->order = order;
     unary_expression->operand = operand;
@@ -861,12 +834,19 @@ Unary_Expression *Parser::parse_unary_expression(Token operation, Expression_Ord
     return unary_expression;
 }
 
-Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, Expression *rhs)
+Expression *Parser::parse_binary_expression(Token operation, Expression *previous, int32 precedence)
 {
+    int32 precedence_now = binary_operator_precedence(operation.type);
+    if (precedence_now >= precedence) {
+        previous->endpoint = true;
+        enqueue(operation);
+        return previous;
+    }
+
     Binary_Expression *binary_expression = ast.push(new Binary_Expression{});
     binary_expression->operation = operation;
-    binary_expression->lhs = lhs;
-    binary_expression->rhs = rhs;
+    binary_expression->lhs = previous;
+    binary_expression->rhs = parse_expression(NULL, precedence_now);
 
     if (!binary_expression->lhs)
         throw errorf("missing left-hand side expression in binary expression", operation);
@@ -894,21 +874,13 @@ Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, Ex
                      type_system.name(binary_expression->type));
     }
 
-#if 0
-    int32 lhs_precedence = type_system.expression_precedence(binary_expression->lhs);
-    int32 rhs_precedence = type_system.expression_precedence(binary_expression->rhs);
-    if (rhs_precedence < lhs_precedence) {
-        std::swap(binary_expression->rhs, binary_expression->lhs);
-    }
-#endif
-
     return binary_expression;
 }
 
 Nested_Expression *Parser::parse_nested_expression(Token token)
 {
     Nested_Expression *nested_expression = ast.push(new Nested_Expression{});
-    nested_expression->operand = parse_expression(NULL);
+    nested_expression->operand = parse_expression();
     expect(Token_Paren_End, "closing nested expression");
     return nested_expression;
 }
@@ -917,8 +889,9 @@ Argument_Expression *Parser::parse_argument_expression(Token token, Function *fu
                                                        Define_Statement *parameter)
 {
     Argument_Expression *argument_expression = ast.push(new Argument_Expression{});
+    Ref_Expression *ref_expression = parse_ref_expression(parameter->variable, &parameter->variable->type);
     argument_expression->assign_expression =
-        parse_designated_assign_expression(token, parameter->variable, parse_expression(NULL));
+        parse_assign_expression(token, ref_expression, parse_expression());
 
     Token comma_or_end = expect(Token_Comma | Token_Paren_End, "in function invoke argument list");
     if (comma_or_end.type & Token_Comma and !parameter->next) {
@@ -949,119 +922,26 @@ Invoke_Expression *Parser::parse_invoke_expression(Token token, Expression *prev
     Define_Statement *parameters = invoke_expression->function->parameters;
     if (parameters != NULL) {
         invoke_expression->arguments = parse_argument_expression(token, function, parameters);
+    } else {
+        expect(Token_Paren_End, "in function invoke argument list");
     }
     return invoke_expression;
 }
 
-// Expression *Parser::parse_move_or_assign_expression(Token token, Expression *lhs, Expression *rhs)
-// {
-//     Object *object = ast.decode_designated_expression(lhs);
-//     if (!object or object->kind() != Object_Variable or !object->has_assign()) {
-//         throw errorf("left-hand side expression is not assignable", token);
-//     }
-
-//     Variable *variable = (Variable *)object;
-//     if (variable->type.kind & Type_Scalar)
-//         return parse_assign_expression(token, variable, rhs);
-//     if (variable->type.kind & Type_Aggregate)
-//         return parse_move_expression(token, variable, rhs);
-// }
-
-Assign_Expression *Parser::parse_scalar_copy_expression(Token token, Variable *variable,
-                                                        Expression *expression)
-{
-    Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
-    assign_expression->variable = variable;
-    assign_expression->type = &assign_expression->variable->type;
-    assign_expression->expression = cast_if_needed(token, expression, assign_expression->type);
-
-    return assign_expression;
-}
-
-// Move_Expression *Parser::parse_move_expression(Token token, Variable *variable, Expression *expression)
-// {
-//     Move_Expression *move_expression = ast.push(new Move_Expression{});
-//     move_expression->destination = variable;
-//     move_expression->source = ast.decode_designated_expression(expression);
-//     move_expression->size = variable->type.size;
-
-//     Type *
-
-// }
-
 Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs, Expression *rhs)
 {
+    Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
     Object *object = ast.decode_designated_expression(lhs);
+
     if (!object or object->kind() != Object_Variable or !object->has_assign()) {
         throw errorf("cannot assign expression", token);
     }
 
-    return parse_designated_assign_expression(token, (Variable *)object, rhs);
-}
-
-Assign_Expression *Parser::parse_designated_assign_expression(Token token, Variable *variable,
-                                                              Expression *expression)
-{
-    if (variable->type.kind & (Type_Struct | Type_Union)) {
-        return parse_struct_copy_expression(token, variable, expression);
-    }
-    if (variable->type.kind & (Type_Array)) {
-        return parse_array_copy_expression(token, variable, expression);
-    }
-    if (variable->type.kind & (Type_Scalar)) {
-        return parse_scalar_copy_expression(token, variable, expression);
-    }
-
-    qcc_assert("parse_designated_assign_expression() not implemented for this type", 0);
-    return NULL;
-}
-
-Assign_Expression *Parser::parse_struct_copy_expression(Token token, Variable *variable,
-                                                        Expression *expression)
-{
-    Variable *designated_by_expression = (Variable *)ast.decode_designated_expression(expression);
-    if (!designated_by_expression or designated_by_expression->kind() != Object_Variable) {
-        throw errorf("cannot assign expression", token);
-    }
-
-    Struct_Statement *destination = variable->type.struct_statement;
-    Struct_Statement *source = designated_by_expression->type.struct_statement;
-
-    if (destination->hash != source->hash) {
-        throw errorf("cannot assign expression", token);
-    }
-
-    // Reverse the order of the linked-list, easier for pushing the struct
-    Assign_Expression *assign_expression = NULL;
-    Assign_Expression *assign_expression_previous = NULL;
-    Ref_Expression *ref_expression = NULL;
-
-    for (auto [name, _] : source->members) {
-        ref_expression = parse_ref_expression(source->members[name], &source->members[name]->type);
-        assign_expression =
-            parse_designated_assign_expression(token, destination->members[name], ref_expression);
-
-        if (assign_expression_previous != NULL) {
-            assign_expression->next = assign_expression_previous;
-        }
-        assign_expression_previous = assign_expression;
-    }
-
-    // Assign_Expression *struct_assign_expression = ast.push(new Assign_Expression{});
-    // struct_assign_expression->expression =
-    //     parse_ref_expression(designated_by_expression, &designated_by_expression->type);
-    // struct_assign_expression->variable = variable;
-    // struct_assign_expression->type = &designated_by_expression->type;
-    // struct_assign_expression->next = assign_expression;
+    assign_expression->type = object->object_type();
+    assign_expression->lhs = lhs;
+    assign_expression->rhs = cast_if_needed(token, rhs, assign_expression->type);
 
     return assign_expression;
-}
-
-Assign_Expression *Parser::parse_array_copy_expression(Token token, Variable *variable,
-                                                       Expression *expression)
-{
-    qcc_assert("TODO! parse_assign_expression_with_array()", 0);
-    return NULL;
 }
 
 Cast_Expression *Parser::parse_cast_expression(Token token, Expression *expression, Type *type)
@@ -1086,22 +966,22 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
     if (!dot_expression->expression) {
         throw errorf("variable expected for member access", token);
     }
-    dot_expression->type = type_system.expression_type(dot_expression->expression);
-    if (dot_expression->type->kind & ~(Type_Struct | Type_Union)) {
+    Type *type = type_system.expression_type(dot_expression->expression);
+    if (type->kind & ~(Type_Struct | Type_Union)) {
         throw errorf("struct or union expected for member access ", token, token.str);
     }
 
     Token name = expect(Token_Id, "after member access operator");
-    Struct_Statement *struct_statement = dot_expression->type->struct_statement;
+    dot_expression->struct_statement = type->struct_statement;
 
-    if (!struct_statement->members.contains(name.str)) {
-        std::string type_name = type_system.name(dot_expression->type);
+    if (!type->struct_statement->members.contains(name.str)) {
+        std::string type_name = type_system.name(type);
         throw errorf("member '{}.{}' is undeclared", name, type_name, name.str);
     }
 
-    dot_expression->member = struct_statement->members[name.str];
+    dot_expression->member = type->struct_statement->members[name.str];
     if (!dot_expression->member) {
-        std::string type_name = type_system.name(dot_expression->type);
+        std::string type_name = type_system.name(type);
         throw errorf("member '{}.{}' is not a variable member", name, type_name, name.str);
     }
 
@@ -1139,9 +1019,9 @@ Address_Expression *Parser::parse_address_expression(Token token, Expression *op
         throw errorf("address-to operand does not designate an object", token);
     }
     if (address_expression->object->kind() & Object_Variable) {
-	// Once the variable has been explicitly addressed it must have an address
-	Variable *variable = (Variable *)address_expression->object;
-	variable->location = Source_Stack;
+        // Once the variable has been explicitly addressed it must have an address
+        Variable *variable = (Variable *)address_expression->object;
+        variable->location = Source_Stack;
     }
 
     address_expression->type = Type{};
@@ -1176,6 +1056,79 @@ Expression *Parser::cast_if_needed(Token token, Expression *expression, Type *ty
     return expression;
 }
 
+// void Parser::into_binary_sequence(Binary_Sequence *sequence, Expression *expression)
+// {
+//     if (!expression)
+//         return;
+//     if (expression->kind() & Expression_Binary) {
+//         Binary_Expression *binary_expression = (Binary_Expression *)expression;
+//         sequence->push_back(binary_expression);
+//         into_binary_sequence(sequence, binary_expression->lhs);
+//         into_binary_sequence(sequence, binary_expression->rhs);
+//     }
+// }
+
+// void Parser::sort_binary_sequence(Binary_Sequence *sequence)
+// {
+//     ranges::sort(*sequence, [&](Binary_Expression *v, Binary_Expression *w) -> bool {
+//         return ast.binary_operation_precedence(v->operation.type) <
+//                ast.binary_operation_precedence(w->operation.type);
+//     });
+// }
+
+// void print_rpn_expression(std::string_view name, Rpn_Expression *rpn_expression)
+// {
+//     fmt::print("{}:\t", name);
+//     for (size_t i = 0; i < rpn_expression->expressions.size(); i++) {
+//         Expression *expression = rpn_expression->expressions[i];
+
+//         switch (expression->kind()) {
+//         case Expression_Id:
+//             fmt::print("{}", ((Id_Expression *)expression)->str());
+//             break;
+//         case Expression_Int:
+//             fmt::print("{}", ((Int_Expression *)expression)->value);
+//             break;
+//         case Expression_Invoke:
+//             fmt::print("{}()", ((Invoke_Expression *)expression)->function->name.str);
+//             break;
+//         default:
+//             fmt::print("{}", fmt::ptr(expression));
+//             break;
+//         }
+//         if (i < rpn_expression->expressions.size() - 1)
+//             fmt::print(", ");
+//     }
+//     fmt::print(" | ");
+//     for (size_t i = 0; i < rpn_expression->operations.size(); i++) {
+//         fmt::print("{}", token_type_str(rpn_expression->operations[i].type));
+//         if (i < rpn_expression->operations.size() - 1)
+//             fmt::print(", ");
+//     }
+//     fmt::print("\n");
+// }
+
+// Binary_Expression *Parser::into_binary_expression(Binary_Sequence *sequence)
+// {
+//     if (sequence->empty())
+//         return NULL;
+
+//     Binary_Expression *binary_expression = sequence->back();
+//     sequence->pop_back();
+
+//     binary_expression->lhs = into_binary_expression(sequence);
+//     binary_expression->rhs = into_binary_expression(sequence);
+//     return binary_expression;
+// }
+
+// Binary_Expression *Parser::sort_binary_expression(Binary_Expression *source)
+// {
+//     Binary_Sequence sequence = {};
+//     into_binary_sequence(&sequence, source);
+//     sort_binary_sequence(&sequence);
+//     return into_binary_expression(&sequence);
+// }
+
 Scope_Statement *Parser::context_scope()
 {
     return (Scope_Statement *)context_of(Statement_Scope);
@@ -1188,6 +1141,22 @@ Statement *Parser::context_of(uint32 kind)
             return (*it);
     }
     return NULL;
+}
+
+bool Parser::is_eof() const
+{
+    return scanner.current_source().stream.empty() and token_queue.empty();
+}
+
+Token Parser::peek_until(int128 mask)
+{
+    Token token = peek(mask);
+
+    if (!token.ok and !is_eof())
+        return token;
+    if (!token.ok)
+        throw errorf("unexpected end of file", token);
+    return token;
 }
 
 int64 Parser::parse_constant(Token token, Expression *expression)
@@ -1203,7 +1172,7 @@ int64 Parser::parse_constant(Token token, Expression *expression)
             Unary(Token_Add, +);
             Unary(Token_Sub, +);
             Unary(Token_Not, !);
-            Unary(Token_Bin_Not, ~);
+            Unary(Token_Bitwise_Not, ~);
         default:
             break;
         }
@@ -1230,11 +1199,11 @@ int64 Parser::parse_constant(Token token, Expression *expression)
             Binary(Token_Greater_Eq, >=);
             Binary(Token_And, &&);
             Binary(Token_Or, ||);
-            Binary(Token_Bin_And, &);
-            Binary(Token_Bin_Or, |);
+            Binary(Token_Bitwise_And, &);
+            Binary(Token_Bitwise_Or, |);
             Binary(Token_Shift_L, <<);
             Binary(Token_Shift_R, >>);
-            Binary(Token_Bin_Xor, ^);
+            Binary(Token_Bitwise_Xor, ^);
         default:
             break;
         }
@@ -1261,22 +1230,6 @@ int64 Parser::parse_constant(Token token, Expression *expression)
     throw errorf("expression is not an integer constant", token);
 }
 
-bool Parser::is_eof() const
-{
-    return scanner.next.empty() and token_queue.empty();
-}
-
-Token Parser::peek_until(int128 mask)
-{
-    Token token = peek(mask);
-
-    if (!token.ok and !is_eof())
-        return token;
-    if (!token.ok)
-        throw errorf("unexpected end of file", token);
-    return token;
-}
-
 Token Parser::peek(int128 mask)
 {
     Token token = {};
@@ -1284,7 +1237,8 @@ Token Parser::peek(int128 mask)
     if (!token_queue.empty()) {
         token = token_queue.front();
     } else {
-        token = token_queue.emplace_back(scanner.tokenize(Token_Comment | Token_Blank));
+        token = scanner.tokenize(syntax_map_c89());
+        token_queue.emplace_back(token);
     }
 
     token.ok = token.type & mask;
@@ -1299,7 +1253,7 @@ Token Parser::scan(int128 mask)
         token = token_queue.front();
         token_queue.pop_front();
     } else {
-        token = scanner.tokenize(Token_Comment | Token_Blank);
+        token = scanner.tokenize(syntax_map_c89());
     }
 
     token.ok = token.type & mask;
@@ -1307,6 +1261,11 @@ Token Parser::scan(int128 mask)
         token_queue.emplace_back(token);
     }
     return token;
+}
+
+Token Parser::enqueue(Token token)
+{
+    return token_queue.emplace_back(token);
 }
 
 Token Parser::expect(int128 mask, std::string_view context)

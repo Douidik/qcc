@@ -9,7 +9,7 @@ Asm::Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &
 {
 }
 
-Label Asm::make_label(Label_Type type)
+Label Asm::emit_label(Label_Type type)
 {
     return Label{type, label_count++};
 }

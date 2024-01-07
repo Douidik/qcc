@@ -32,7 +32,7 @@ void Allocator::allocate()
         if (statement->kind() & Statement_Function)
             create_function_stack((Function_Statement *)statement);
     }
-    
+
     // for (auto [variable, use_range] : uses_range) {
     //     std::string_view source_typename = "";
     //     switch (variable->location) {
@@ -48,7 +48,7 @@ void Allocator::allocate()
     //     case Source_Fpr:
     //         source_typename = "fpr";
     //         break;
-    // 	default:
+    //     default:
     //         source_typename = "?";
     //         break;
     //     }
@@ -58,14 +58,12 @@ void Allocator::allocate()
     // }
 }
 
-#define Round_Up(x, y) ((x + y - 1) & ~(y - 1))
-
 int64 Allocator::create_function_stack_push(Variable *variable, int64 offset, int64 alignment)
 {
     int64 size = variable->type.size;
     int64 address = Round_Up(offset, alignment);
 
-    if (variable->mode & Define_Parameter) {
+    if (variable->env & Define_Parameter) {
         // __cdecl function: parameters are at the top of the invoker function
         // we offset by 16 because we pushed the return address and the bsp
         variable->address = +(address + 16);
@@ -73,21 +71,24 @@ int64 Allocator::create_function_stack_push(Variable *variable, int64 offset, in
         variable->address = -(address + size);
     }
 
-    if (variable->type.kind & (Type_Struct | Type_Union)) {
-        Struct_Statement *struct_statement = variable->type.struct_statement;
+    // Todo! maybe not needed since we can only access the struct members by a dot expression
+    // that generates the address by offseting a pre-parsed value to the struct address
+    // if (variable->type.kind & (Type_Struct | Type_Union)) {
+    //     Struct_Statement *struct_statement = variable->type.struct_statement;
+    //     int64 struct_alignment = variable->type.alignment();
 
-        for (Variable *member : views::values(struct_statement->members)) {
-            member->location = variable->location;
-            member->mode |= variable->mode;
+    //     for (Variable *member : views::values(struct_statement->members)) {
+    //         member->location = variable->location;
+    //         member->mode |= variable->mode;
 
-            if (variable->type.kind & Type_Struct) {
-                offset = create_function_stack_push(member, offset, alignment);
-            }
-            if (variable->type.kind & Type_Union) {
-                create_function_stack_push(member, offset, alignment);
-            }
-        }
-    }
+    //         if (variable->type.kind & Type_Struct) {
+    //             offset = create_function_stack_push(member, offset, struct_alignment);
+    //         }
+    //         if (variable->type.kind & Type_Union) {
+    //             create_function_stack_push(member, offset, struct_alignment);
+    //         }
+    //     }
+    // }
     return address + size;
 }
 
@@ -101,11 +102,12 @@ void Allocator::create_function_stack(Function_Statement *function_statement)
     };
 
     Function *function = function_statement->function;
-    size_t offset = 0;
-    size_t alignment = 0;
+    size_t offset;
+    size_t alignment;
+    Define_Statement *parameter;
 
-    Define_Statement *parameter = function->parameters;
-    for (; parameter != NULL; parameter = parameter->next) {
+    offset = 0;
+    for (parameter = function->parameters; parameter != NULL; parameter = parameter->next) {
         offset += create_function_stack_push(parameter->variable, offset, 8);
     }
     function->invoke_size = Round_Up(offset, 8);
@@ -126,7 +128,7 @@ void Allocator::parse_begin_of_use(Variable *variable)
         return;
     }
 
-    else if (variable->type.kind & (Type_Struct | Type_Union) or variable->mode & Define_Parameter) {
+    else if (variable->type.kind & (Type_Struct | Type_Union) or variable->env & Define_Parameter) {
         variable->location = Source_Stack;
     }
 
@@ -186,10 +188,12 @@ void Allocator::parse_statement_use_ranges(Statement *statement)
         Function_Statement *function_statement = (Function_Statement *)statement;
         Function *function = function_statement->function;
 
-        if (function->parameters != NULL)
+        if (function->parameters != NULL and function_statement->scope != NULL) {
             parse_statement_use_ranges(function->parameters);
-        if (function_statement->scope != NULL)
-            parse_statement_use_ranges(function_statement->scope);
+        }
+        if (function_statement->scope != NULL) {
+	    parse_statement_use_ranges(function_statement->scope);
+        }
         break;
     }
 
@@ -219,7 +223,7 @@ void Allocator::parse_statement_use_ranges(Statement *statement)
         for (; define_statement != NULL; define_statement = define_statement->next) {
             Variable *variable = define_statement->variable;
 
-            if (variable->mode & Define_Parameter or define_statement->expression != NULL)
+            if (variable->env & Define_Parameter or define_statement->expression != NULL)
                 parse_new_use(variable);
             if (define_statement->expression != NULL)
                 parse_expression_use_ranges(define_statement->expression);
@@ -230,6 +234,12 @@ void Allocator::parse_statement_use_ranges(Statement *statement)
     case Statement_Return: {
         Return_Statement *return_statement = (Return_Statement *)statement;
         parse_expression_use_ranges(return_statement->expression);
+        break;
+    }
+
+    case Statement_Expression: {
+        Expression_Statement *expression_statement = (Expression_Statement *)statement;
+        parse_expression_use_ranges(expression_statement->expression);
         break;
     }
 
@@ -256,7 +266,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Argument: {
         Argument_Expression *argument_expression = (Argument_Expression *)expression;
-        parse_expression_use_ranges(argument_expression->assign_expression);
+	Assign_Expression *assign_expression = argument_expression->assign_expression;
+        parse_expression_use_ranges(assign_expression->rhs);
         if (argument_expression->next != NULL)
             parse_expression_use_ranges(argument_expression->next);
         break;
@@ -264,7 +275,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Invoke: {
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
-        parse_expression_use_ranges(invoke_expression->arguments);
+	if (invoke_expression->arguments != NULL)
+	    parse_expression_use_ranges(invoke_expression->arguments);
         invoke_expression->use_time = std::max((int64)uses_timeline.size() - 1, 0L);
         break;
     }
@@ -292,12 +304,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Assign: {
         Assign_Expression *assign_expression = (Assign_Expression *)expression;
-        parse_new_use(assign_expression->variable);
-        parse_expression_use_ranges(assign_expression->expression);
-
-        if (assign_expression->next != NULL) {
-            parse_expression_use_ranges(assign_expression->next);
-        }
+        parse_expression_use_ranges(assign_expression->lhs);
+        parse_expression_use_ranges(assign_expression->rhs);
         break;
     }
 

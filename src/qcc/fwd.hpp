@@ -48,7 +48,7 @@ struct Ref_Expression;
 enum Object_Kind : uint32;
 enum Type_Mod : uint32;
 enum Type_Storage : uint32;
-enum Define_Mode : uint32;
+enum Define_Env : uint32;
 struct Object;
 struct Function;
 struct Variable;

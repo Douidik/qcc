@@ -7,5 +7,5 @@ int main(void)
 {
     int main_number = 132;
     int dereferenced = return_132(&main_number);
-    return dereferenced;
+    return dereferenced == 132;
 }

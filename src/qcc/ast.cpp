@@ -19,64 +19,53 @@ Ast::~Ast()
 
 Object *Ast::decode_designated_expression(Expression *expression)
 {
-    Expression *designated = search_designated_expression(expression);
-    if (!designated)
-        return NULL;
-
-    switch (designated->kind()) {
+    switch (expression->kind()) {
     case Expression_Id: {
-        Id_Expression *id_expression = (Id_Expression *)designated;
+        Id_Expression *id_expression = (Id_Expression *)expression;
         return id_expression->object;
     }
 
+    case Expression_Ref: {
+        Ref_Expression *ref_expression = (Ref_Expression *)expression;
+        return ref_expression->object;
+    }
+
+    case Expression_Address: {
+        Address_Expression *address_expression = (Address_Expression *)expression;
+        return address_expression->object;
+    }
+
+    case Expression_Deref: {
+        Deref_Expression *deref_expression = (Deref_Expression *)expression;
+        return deref_expression->object;
+    }
+
     case Expression_Dot: {
-        Dot_Expression *dot_expression = (Dot_Expression *)designated;
+        Dot_Expression *dot_expression = (Dot_Expression *)expression;
         return dot_expression->member;
     }
 
-    default:
-        qcc_assert("decode_designated_expression() unexpected expression of type", 0);
-        return NULL;
-    }
-}
-
-Expression *Ast::search_designated_expression(Expression *expression)
-{
-    Expression *designated = NULL;
-
-    switch (expression->kind()) {
-    case Expression_Id:
-    case Expression_Dot:
-        designated = expression;
-        break;
-
     case Expression_Unary: {
         Unary_Expression *unary_expression = (Unary_Expression *)expression;
-        if (unary_expression->operation.type & (Token_Increment | Token_Decrement)) {
-            designated = search_designated_expression(unary_expression->operand);
-        }
-        break;
+        if (unary_expression->operation.type & (Token_Increment | Token_Decrement))
+            return decode_designated_expression(unary_expression->operand);
     }
 
     case Expression_Binary: {
         Binary_Expression *binary_expression = (Binary_Expression *)expression;
-        if (binary_expression->operation.type & (Token_Mask_Binary_Assign)) {
-            designated = search_designated_expression(binary_expression->lhs);
-        }
-        break;
+        if (binary_expression->operation.type & (Token_Mask_Binary_Assign))
+            return decode_designated_expression(binary_expression->lhs);
     }
 
     case Expression_Nested: {
         Nested_Expression *nested_expression = (Nested_Expression *)expression;
-        designated = search_designated_expression(nested_expression->operand);
-        break;
+        return decode_designated_expression(nested_expression->operand);
     }
 
     default:
-        break;
+        qcc_assert(0, "expression is not designated");
+        return NULL;
     }
-
-    return designated;
 }
 
 #define Ws fmt::print(stream, "{:{}}", "", indent * 4)
@@ -204,7 +193,7 @@ void Ast::dump_statement(std::ostream &stream, Statement *statement, int32 inden
     }
 
     default:
-        qcc_assert("TODO! statement_dump()", 0);
+        qcc_todo("support statement kind");
     }
 }
 
@@ -262,12 +251,6 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
         return;
     }
 
-        // case Expression_Ternary: {
-        // }
-
-        // case Expression_String: {
-        // }
-
     case Expression_Int: {
         Int_Expression *int_expression = (Int_Expression *)expression;
         Ws, fmt::print(stream, "Int_Expression (");
@@ -292,7 +275,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Id: {
         Id_Expression *id_expression = (Id_Expression *)expression;
-        Ws, fmt::println(stream, "Id_Expression (str: {}): ", id_expression->str());
+        Ws, fmt::println(stream, "Id_Expression (name: {}): ", id_expression->str());
         dump_object(stream, id_expression->object, indent + 1);
         return;
     }
@@ -307,13 +290,10 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Assign: {
         Assign_Expression *assign_expression = (Assign_Expression *)expression;
         Ws, fmt::println(stream, "Assign_Expression: ");
-        Ws, fmt::println(stream, "*Expression: ");
-        dump_expression(stream, assign_expression->expression, indent + 1);
-
-        if (assign_expression->next != NULL) {
-            Ws, fmt::println(stream, "*Next: ");
-            dump_expression(stream, assign_expression->next, indent + 1);
-        }
+        Ws, fmt::println(stream, "*Lhs: ");
+        dump_expression(stream, assign_expression->lhs, indent + 1);
+        Ws, fmt::println(stream, "*Rhs: ");
+        dump_expression(stream, assign_expression->rhs, indent + 1);
         return;
     }
 
@@ -342,7 +322,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        Ws, fmt::println(stream, "Deref_Expression (type: {}) : ", deref_expression->type->token.str);
+        Ws, fmt::println(stream, "Deref_Expression (type: {}): ", deref_expression->type->token.str);
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, deref_expression->object, indent + 1);
         return;
@@ -350,7 +330,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Address: {
         Address_Expression *address_expression = (Address_Expression *)expression;
-        Ws, fmt::println(stream, "Address_Expression (type: {}) : ", address_expression->type.token.str);
+        Ws, fmt::println(stream, "Address_Expression (type: {}): ", address_expression->type.token.str);
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, address_expression->object, indent + 1);
         return;
@@ -358,14 +338,14 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Ref: {
         Ref_Expression *ref_expression = (Ref_Expression *)expression;
-        Ws, fmt::println(stream, "Ref_Expression (type: {}) : ", ref_expression->type->token.str);
+        Ws, fmt::println(stream, "Ref_Expression (type: {}): ", ref_expression->type->token.str);
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, ref_expression->object, indent + 1);
         return;
     }
 
     default:
-        qcc_assert("TODO! expression_dump()", 0);
+        qcc_todo("support expression kind");
     }
 }
 
@@ -392,10 +372,8 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
         Ws, fmt::print(stream, "Variable (");
         fmt::print(stream, "name: {}, ", variable->name.str);
         fmt::print(stream, "type: {}, ", variable->type.token.str);
-        fmt::print(stream, "define_mode: {}, ", define_mode_str(variable->mode));
-
-        if (variable->mode & Define_Enum)
-            fmt::print(stream, "constant: {}, ", variable->constant);
+        fmt::print(stream, "define_mode: {}, ", define_mode_str(variable->env));
+        fmt::print(stream, "meta: {}, ", variable->meta);
 
         switch (variable->location) {
         case Source_Stack:
@@ -429,7 +407,7 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
     }
 
     default:
-        qcc_assert("TODO! dump_object() not implemented", 0);
+        qcc_todo("support object kind");
     }
 }
 

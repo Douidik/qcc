@@ -13,13 +13,13 @@
 #include <sys/wait.h>
 
 #ifndef QCC_TEST_PATH
-  #define QCC_TEST_PATH "test/"
+#define QCC_TEST_PATH "test/"
 #endif
 
 namespace qcc
 {
 
-int exec_cmd(std::string_view fmt, auto... args)
+static int exec_cmd(std::string_view fmt, auto... args)
 {
     std::string cmd = fmt::format(fmt::runtime(fmt), args...);
     pid_t pid = fork();
@@ -29,11 +29,12 @@ int exec_cmd(std::string_view fmt, auto... args)
         wait(&wait_status);
         return WEXITSTATUS(wait_status);
     } else {
-        exit(execlp("/bin/sh", "sh", "-c", cmd.c_str(), NULL));
+        int32 cmd_status = execlp("/bin/sh", "sh", "-c", cmd.c_str(), NULL);
+        exit(cmd_status);
     }
 }
 
-std::string make_build_filepath(std::string_view filename, std::string_view extension)
+static std::string make_build_filepath(std::string_view filename, std::string_view extension)
 {
     fs::path directory = fs::temp_directory_path();
     return fmt::format("{}/{}.{}", directory.string(), filename, extension);
@@ -48,16 +49,9 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
     std::string filepath_obj = make_build_filepath(filename, "o");
     std::string filepath_exe = make_build_filepath(filename, "");
 
-    std::fstream fstream(filepath);
-    if (!fstream.is_open()) {
-        return testing::AssertionFailure() << "cannot open file from: " << filepath;
-    }
-    std::string source = {std::istreambuf_iterator(fstream), {}};
-    source.push_back('\n');
-
     Ast ast = {};
-    Syntax_Map syntax_map = syntax_map_c89();
-    Scanner scanner = {source, syntax_map};
+    std::string source = fstream_to_str(filepath);
+    Scanner scanner = {source, filepath.parent_path()};
 
     Parser parser = {ast, scanner};
     parser.parse();
@@ -66,7 +60,7 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
 
     std::fstream fstream_asm(filepath_asm, std::ios::out | std::ios::trunc);
     X86 x86 = {ast, allocator, source, fstream_asm};
-    x86.make();
+    x86.emit();
     fstream_asm.close();
 
     if (exec_cmd("nasm -g -f elf64 {}", filepath_asm) != 0) {
@@ -86,13 +80,18 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
 
 #define Expect_Return(filepath, expected_return) \
     EXPECT_TRUE(expect_return(QCC_TEST_PATH filepath, expected_return))
+// We choose 1 as the success exit code because it's easier to deal with equality operators
+#define Expect_Ok(filepath) EXPECT_TRUE(expect_return(QCC_TEST_PATH filepath, 1))
 
 TEST(X86, Common)
 {
-    Expect_Return("add.c", 55 + 3);
-    Expect_Return("pointer.c", 132);
-    Expect_Return("use_ranges.c", 5);
-    Expect_Return("struct.c", 102);
+    Expect_Ok("add.c");
+    Expect_Ok("mul.c");
+    Expect_Ok("pointer.c");
+    Expect_Ok("use_ranges.c");
+    Expect_Ok("struct.c");
+    Expect_Ok("header.c");
+    Expect_Ok("precedence.c");
 }
 
 } // namespace qcc

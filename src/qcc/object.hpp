@@ -15,6 +15,7 @@ enum Object_Kind : uint32
     Object_Variable = Bit(uint32, 1),
     Object_Typedef = Bit(uint32, 2),
     Object_Record = Bit(uint32, 3),
+    Object_String = Bit(uint32, 4),
 };
 
 struct Object
@@ -24,6 +25,11 @@ struct Object
     virtual ~Object() = default;
     virtual Object_Kind kind() const = 0;
     virtual Type *object_type() = 0;
+
+    virtual Source *source() const
+    {
+        return NULL;
+    }
 
     virtual bool has_assign() const
     {
@@ -45,15 +51,15 @@ struct Function : Object
     int64 stack_size;
     bool is_main;
 
-    Type *object_type() override
-    {
-        qcc_assert("type() for function", 0);
-        return NULL;
-    }
-
     Object_Kind kind() const override
     {
         return Object_Function;
+    }
+
+    Type *object_type() override
+    {
+	qcc_todo("type function objects");
+        return NULL;
     }
 
     bool has_address() const override
@@ -62,7 +68,7 @@ struct Function : Object
     };
 };
 
-enum Define_Mode : uint32
+enum Define_Env : uint32
 {
     Define_Struct = Bit(uint32, 1),
     Define_Union = Bit(uint32, 2),
@@ -92,8 +98,18 @@ constexpr std::string_view define_mode_str(uint32 define_mode)
 struct Variable : Object, Source
 {
     Type type;
-    int64 constant;
-    uint32 mode;
+    uint32 env;
+
+    union {
+	int64 enum_constant;
+	int64 struct_offset;
+	int64 meta;
+    };
+    
+    Source *source() const override
+    {
+        return (Source *)this;
+    }
 
     Object_Kind kind() const override
     {
@@ -120,14 +136,14 @@ struct Typedef : Object
 {
     Type type;
 
-    Type *object_type() override
-    {
-        return &type;
-    }
-
     Object_Kind kind() const override
     {
         return Object_Typedef;
+    }
+
+    Type *object_type() override
+    {
+        return &type;
     }
 };
 
@@ -135,14 +151,40 @@ struct Record : Object
 {
     Type type;
 
+    Object_Kind kind() const override
+    {
+        return Object_Record;
+    }
+
+    Type *object_type() override
+    {
+        return &type;
+    }
+};
+
+struct String : Object, Source
+{
+    std::string data;
+    Type type;
+    
+    Source *source() const override
+    {
+        return (Source *)this;
+    }
+
+    Object_Kind kind() const override
+    {
+        return Object_Variable;
+    }
+
     Type *object_type() override
     {
         return &type;
     }
 
-    Object_Kind kind() const override
+    bool has_address() const override
     {
-        return Object_Record;
+        return true;
     }
 };
 

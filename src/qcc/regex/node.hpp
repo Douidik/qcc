@@ -25,7 +25,7 @@ struct Node
     Node(State state);
     Node(Option option = Regex_Monostate);
     size_t submit(std::string_view expr, size_t n) const;
-    
+
     Node *push(Node *node);
     Node *merge(Node *node);
     Node *concat(Node *node);

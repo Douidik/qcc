@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <fmt/core.h>
+#include <fstream>
+#include <iterator>
 #include <ranges>
 #include <source_location>
 
@@ -38,27 +40,42 @@ constexpr size_t npos = (size_t)-1;
 #define QCC_DEBUG
 #endif
 
-static inline void qcc_assert(std::string_view message, bool boolean)
+[[noreturn]]
+static inline void qcc_print_crash(std::string_view context, std::string_view message,
+                                   std::source_location source_location)
 {
-    [[unlikely]] if (!boolean) {
-        fmt::print(stderr, "internal qcc assertion failed: {}\n", message);
-        abort();
-    }
+    std::string_view file = source_location.file_name();
+    std::string_view function = source_location.function_name();
+    uint32 line = source_location.line();
+    fmt::print(stderr, "{} ({}:{}:{}): {}\n", context, file, function, line, message);
+    abort();
 }
 
-// static inline void qcc_assert(std::string_view message, bool boolean,
-//                        std::source_location source_location = std::source_location::current())
-// {
-//     [[unlikely]] if (!boolean) {
-//         std::string_view file = source_location.file_name();
-//         std::string_view function = source_location.function_name();
-//         uint32 line = source_location.line();
-//         fmt::print(stderr, "internal qcc assertion failed ({}:{}:{}): {}\n", file, function, line,
-//         message);
-// 	    abort();
-//     }
-// }
+static inline void qcc_assert(bool boolean, std::string_view message,
+                              std::source_location source_location = std::source_location::current())
+{
+    [[unlikely]] if (!boolean) {
+        qcc_print_crash("assertion failed!", message, source_location);
+    }
+}
+    
+[[noreturn]]
+static inline void qcc_todo(std::string_view message = "",
+                            std::source_location source_location = std::source_location::current())
+{
+    qcc_print_crash("todo!", message, source_location);
+}
 
+static inline std::string fstream_to_str(std::fstream &&fstream)
+{
+    qcc_assert(fstream.is_open(), "error occured on stream");
+    std::string str = {std::istreambuf_iterator(fstream), {}};
+    str.push_back('\n');
+    fstream.close();
+    return str;
+}
+
+#define Round_Up(x, y) ((x + y - 1) & ~(y - 1))
 #define Bit(type, n) ((type)1 << n)
 
 } // namespace qcc

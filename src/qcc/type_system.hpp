@@ -184,7 +184,7 @@ struct Type
         Function *function;
         Type *array_type;
         Type *enum_type;
-        void *metadata;
+        void *meta;
     };
 
     size_t alignment();
@@ -209,7 +209,7 @@ struct Type_System
     size_t struct_size(Type *type);
     Type *merge_type(Type *destination, Type *source);
     Type *orphan_type_push(Type *type);
-    Type clone_type(Ast &ast, Type *type);
+    // Type clone_type(Ast &ast, Type *type);
     std::string name(Type *type);
 
     Error errorf(std::string_view fmt, auto... args) const

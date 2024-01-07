@@ -149,12 +149,12 @@ Node *Parser::parse_set(std::string_view set)
     });
 }
 
+const Regex Scope_Format = "'[' ^ '-' ^ ']'";
+
 Node *Parser::parse_scope()
 {
-    static const Regex scope_format = "'[' ^ '-' ^ ']'";
-
-    if (!scope_format.match(token, src.end())) {
-        throw errorf("scope does not match the format '{:s}'", scope_format.src);
+    if (!Scope_Format.match(token, src.end())) {
+        throw errorf("scope does not match the format '{:s}'", Scope_Format.src);
     }
 
     char a = token[1];

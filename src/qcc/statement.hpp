@@ -82,7 +82,7 @@ struct Struct_Statement : Statement
     uint64 hash;
     Token keyword;
     std::unordered_map<std::string_view, Variable *> members;
-    
+
     Statement_Kind kind() const override
     {
         return Statement_Struct;

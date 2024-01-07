@@ -19,7 +19,7 @@ FetchContent_MakeAvailable(gtest)
 
 project(
   qcc
-  DESCRIPTION "Quick C compiler"
+  DESCRIPTION "Experimental C-compiler"
   LANGUAGES CXX
 )
 

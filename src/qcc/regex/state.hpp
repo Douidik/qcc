@@ -3,34 +3,39 @@
 
 #include "common.hpp"
 
-namespace qcc::regex {
+namespace qcc::regex
+{
 
 struct Node;
 
-enum Option : uint32 {
-  Regex_Monostate,
-  Regex_Eps,
-  Regex_Any,
-  Regex_None,
-  Regex_Not,
-  Regex_Dash,
-  Regex_Str,
-  Regex_Set,
-  Regex_Scope,
+enum Option : uint32
+{
+    Regex_Monostate,
+    Regex_Eps,
+    Regex_Any,
+    Regex_None,
+    Regex_Not,
+    Regex_Dash,
+    Regex_Str,
+    Regex_Set,
+    Regex_Scope,
 };
 
-struct Monostate {};
+struct Monostate
+{
+};
 
-struct State {
-  Option option;
-  union {
-    Monostate monostate;
-    char range[2];
-    std::string_view str;
-    Node *sequence;
-  };
+struct State
+{
+    Option option;
+    union {
+        Monostate monostate;
+        char range[2];
+        std::string_view str;
+        Node *sequence;
+    };
 
-  size_t submit(std::string_view expr, size_t n) const;
+    size_t submit(std::string_view expr, size_t n) const;
 };
 
 } // namespace qcc::regex

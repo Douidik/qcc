@@ -35,8 +35,8 @@ struct Asm
     uint32 label_count;
 
     Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream);
-    Label make_label(Label_Type type);
-    virtual void make() = 0;
+    Label emit_label(Label_Type type);
+    virtual void emit() = 0;
 };
 
 } // namespace qcc
