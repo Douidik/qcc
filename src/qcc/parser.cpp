@@ -846,6 +846,7 @@ Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, in
 
 Expression *Parser::parse_binary_assign_expression(Token operation, Expression *lhs)
 {
+    // binary assignments transform (a += b) into (a = a + b)
     Binary_Expression *binary_expression = ast.push(new Binary_Expression{});
     binary_expression->operation = operation;
     binary_expression->lhs = lhs;
@@ -1000,16 +1001,14 @@ Dot_Expression *Parser::parse_arrow_expression(Token token, Expression *previous
 Deref_Expression *Parser::parse_deref_expression(Token token, Expression *operand)
 {
     Deref_Expression *deref_expression = ast.push(new Deref_Expression);
-    deref_expression->object = ast.decode_designated_expression(operand);
+    deref_expression->operand = operand;
+    deref_expression->type = type_system.expression_type(operand);
 
-    if (!deref_expression->object) {
-        throw errorf("dereference operand does not designate an object", token);
-    }
-    if (deref_expression->object->object_type()->kind != Type_Pointer) {
+    if (deref_expression->type->kind != Type_Pointer) {
         throw errorf("cannot dereference a non-pointer expression", token);
     }
-
-    deref_expression->type = deref_expression->object->object_type()->pointed_type;
+    
+    deref_expression->type = deref_expression->type->pointed_type;
     return deref_expression;
 }
 

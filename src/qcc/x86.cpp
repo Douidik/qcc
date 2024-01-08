@@ -396,7 +396,7 @@ void X86::emit_assign_expression(Assign_Expression *assign_expression, Register 
                                  bool in_invoke_expression)
 {
     int64 size = assign_expression->type->size;
-    Source destination = emit_expression_source(assign_expression->lhs, regs);
+    Source destination = emit_expression_source(assign_expression->lhs, Rcx);
 
     if (assign_expression->type->kind & Type_Aggregate) {
         Source source = emit_expression_source(assign_expression->rhs, regs);
@@ -465,7 +465,8 @@ Source X86::emit_expression_source(Expression *expression, Register regs)
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        emit_mov(&regs, deref_expression->object->source(), 8);
+        Source address = emit_expression_source(deref_expression->operand, regs);
+        emit_mov(&regs, &address, 8);
         return regs.with_indirection();
     }
 
@@ -477,13 +478,9 @@ Source X86::emit_expression_source(Expression *expression, Register regs)
 
 void X86::emit_deref_expression(Deref_Expression *deref_expression, Register regs)
 {
-    Source *address_source = deref_expression->object->source();
-    qcc_assert(address_source != NULL, "object is not sourced");
-    emit_mov(&regs, address_source, 8);
-
-    size_t size = deref_expression->type->size;
     Register indirect = regs.with_indirection();
-    emit_mov(&regs, &indirect, size);
+    emit_expression(deref_expression->operand, regs);
+    emit_mov(&regs, &indirect, deref_expression->type->size);
 }
 
 void X86::emit_address_expression(Address_Expression *address_expression, Register regs)

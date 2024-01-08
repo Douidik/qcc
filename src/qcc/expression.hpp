@@ -26,8 +26,8 @@ enum Expression_Kind : uint32
     Expression_Dot = Bit(uint32, 13),
     Expression_Deref = Bit(uint32, 14),
     Expression_Address = Bit(uint32, 15),
-    // Expression_Move = Bit(uint32, 16),
-    Expression_Ref = Bit(uint32, 16),
+    Expression_Subscript = Bit(uint32, 16),
+    Expression_Ref = Bit(uint32, 17),
 };
 
 enum Expression_Order : uint32
@@ -222,7 +222,7 @@ struct Dot_Expression : Expression
 
 struct Deref_Expression : Expression
 {
-    Object *object;
+    Expression *operand;
     Type *type;
 
     Expression_Kind kind() const override
@@ -242,17 +242,17 @@ struct Address_Expression : Expression
     }
 };
 
-// struct Move_Expression : Expression
-// {
-//     Variable *source;
-//     Variable *destination;
-//     size_t size;
+struct Subscript_Expression : Expression
+{
+    Expression *operand;
+    Expression *index;
+    Type *type;
 
-//     Expression_Kind kind() const override
-//     {
-//         return Expression_Move;
-//     }
-// };
+    Expression_Kind kind() const override
+    {
+        return Expression_Subscript;
+    }
+};
 
 struct Ref_Expression : Expression
 {

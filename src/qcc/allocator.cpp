@@ -323,9 +323,7 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        if (deref_expression->object->kind() & Object_Variable) {
-            parse_new_use((Variable *)deref_expression->object);
-        }
+        parse_expression_use_ranges(deref_expression->operand);
         break;
     }
 

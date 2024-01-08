@@ -37,7 +37,7 @@ Object *Ast::decode_designated_expression(Expression *expression)
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        return deref_expression->object;
+        return decode_designated_expression(deref_expression->operand);
     }
 
     case Expression_Dot: {
@@ -322,8 +322,8 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
         Ws, fmt::println(stream, "Deref_Expression (type: {}): ", deref_expression->type->name());
-        Ws, fmt::println(stream, "*Object");
-        dump_object(stream, deref_expression->object, indent + 1);
+        Ws, fmt::println(stream, "*Expression");
+        dump_expression(stream, deref_expression->operand, indent + 1);
         return;
     }
 
