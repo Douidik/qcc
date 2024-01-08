@@ -187,6 +187,7 @@ struct Type
         void *meta;
     };
 
+    std::string name();
     size_t alignment();
     Type *base();
 };

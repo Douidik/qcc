@@ -10,6 +10,29 @@
 namespace qcc
 {
 
+std::string Type::name()
+{
+    if (token.ok) {
+        return std::string(token.str);
+    }
+
+    // Generate a fallback type name if the token is unavailable
+    std::vector<std::string_view> stream = {};
+    if (storage != Type_Local) {
+        stream.push_back(type_storage_name(storage));
+    }
+    for (uint32 cvr_mask = 1; cvr_mask != Type_Cvr_End; cvr_mask <<= 1) {
+        if (cvr & cvr_mask)
+            stream.push_back(type_cvr_name((Type_Cvr)cvr_mask));
+    }
+    for (uint32 mods_mask = 1; mods_mask != Type_Mod_End; mods_mask <<= 1) {
+        if (mods_mask != Type_Signed and mods_mask & mods)
+            stream.push_back(type_mod_name((Type_Mod)mods_mask));
+    }
+    stream.push_back(type_kind_name(kind));
+    return fmt::format("{}", fmt::join(stream, " "));
+}
+
 Type *Type::base()
 {
     switch (kind) {
@@ -259,28 +282,5 @@ Type *Type_System::orphan_type_push(Type *type)
 
 //     return clone;
 // }
-
-std::string Type_System::name(Type *type)
-{
-    if (type->token.ok) {
-        return std::string(type->token.str);
-    }
-
-    // Fallback-name
-    std::vector<std::string_view> stream = {};
-    if (type->storage != Type_Local) {
-        stream.push_back(type_storage_name(type->storage));
-    }
-    for (uint32 cvr = 1; cvr != Type_Cvr_End; cvr <<= 1) {
-        if (cvr & type->cvr)
-            stream.push_back(type_cvr_name((Type_Cvr)cvr));
-    }
-    for (uint32 mod = 1; mod != Type_Mod_End; mod <<= 1) {
-        if (mod & type->mods)
-            stream.push_back(type_mod_name((Type_Mod)mod));
-    }
-    stream.push_back(type_kind_name(type->kind));
-    return fmt::format("{}", fmt::join(stream, " "));
-}
 
 } // namespace qcc

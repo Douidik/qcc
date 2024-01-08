@@ -85,16 +85,6 @@ enum Token_Type : int128
     Token_Mod = Bit(int128, 57),
 
     Token_Assign = Bit(int128, 58),
-    Token_Add_Assign = Bit(int128, 59),
-    Token_Sub_Assign = Bit(int128, 60),
-    Token_Mul_Assign = Bit(int128, 61),
-    Token_Div_Assign = Bit(int128, 62),
-    Token_Mod_Assign = Bit(int128, 63),
-    Token_Shift_L_Assign = Bit(int128, 64),
-    Token_Shift_R_Assign = Bit(int128, 65),
-    Token_Bin_And_Assign = Bit(int128, 66),
-    Token_Bin_Xor_Assign = Bit(int128, 67),
-    Token_Bin_Or_Assign = Bit(int128, 68),
 
     Token_Bitwise_Not = Bit(int128, 69),
     Token_Bitwise_And = Token_Ampersand,
@@ -169,17 +159,8 @@ const int128 Token_Mask_Fundamental =
 
 const int128 Token_Mask_Record = Token_Struct | Token_Union | Token_Enum;
 
-const int128 Token_Mask_Binary_Assign = Token_Assign | Token_Add_Assign | Token_Sub_Assign |
-                                        Token_Mul_Assign | Token_Div_Assign | Token_Mod_Assign |
-                                        Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
-                                        Token_Bin_Xor_Assign | Token_Bin_Or_Assign;
-
-const int128 Token_Mask_Shift = Token_Shift_L | Token_Shift_R | Token_Shift_L_Assign | Token_Shift_R_Assign;
-
-const int128 Token_Mask_Bin = Token_Shift_L_Assign | Token_Shift_R_Assign | Token_Bin_And_Assign |
-                              Token_Bin_Xor_Assign | Token_Bin_Or_Assign | Token_Bitwise_Not |
-                              Token_Bitwise_And | Token_Bitwise_Or | Token_Bitwise_Xor | Token_Shift_L |
-                              Token_Shift_R;
+const int128 Token_Mask_Bin = Token_Bitwise_Not | Token_Bitwise_And | Token_Bitwise_Or | Token_Bitwise_Xor |
+                              Token_Shift_L | Token_Shift_R;
 
 const int128 Token_Mask_Hash = Token_Hash_Include | Token_Hash_Define | Token_Hash_Undef | Token_Hash_Ifdef |
                                Token_Hash_Ifndef | Token_Hash_Elif | Token_Hash_Else | Token_Hash_Endif;

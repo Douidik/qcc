@@ -36,16 +36,6 @@ int32 binary_operator_precedence(Token_Type op)
     case Token_Or:
         return 12;
     case Token_Assign:
-    case Token_Add_Assign:
-    case Token_Sub_Assign:
-    case Token_Mul_Assign:
-    case Token_Div_Assign:
-    case Token_Mod_Assign:
-    case Token_Shift_L_Assign:
-    case Token_Shift_R_Assign:
-    case Token_Bin_And_Assign:
-    case Token_Bin_Xor_Assign:
-    case Token_Bin_Or_Assign:
         return 14;
     default:
         qcc_assert(0, "operator not defined");

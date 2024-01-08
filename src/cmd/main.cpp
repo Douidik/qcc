@@ -38,8 +38,9 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
     std::string filename = filepath.stem().string();
     std::string filepath_asm = make_build_filepath(filename, ".s");
     std::string filepath_obj = make_build_filepath(filename, ".o");
+
     if (output == "?") {
-        output = make_build_filepath(filename, "");
+        output = directory / filename;
     }
 
     Ast ast = {};
@@ -47,7 +48,7 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
     std::fstream source_fstream(filepath);
     if (!source_fstream.is_open()) {
         fmt::println(stderr, "cannot open source file from '{}'", filepath.string());
-        return 1;	
+        return 1;
     }
 
     std::string source = fstream_to_str(std::move(source_fstream));
@@ -77,10 +78,16 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
 
 } // namespace qcc
 
+const std::string_view Usage = //
+    "./qcc -f <source-filepath> -o <output> -v\n"
+    " -f: C source code filepath\n"
+    " -o: output path, defaulted to (dir/filename.c => dir/filename)\n"
+    " -v: verbose mode, prints the ast";
+
 int main(int argc, char *argv[])
 {
     bool verbose = false;
-    std::string_view filepath = "";
+    std::string_view filepath = "?";
     std::string_view output = "?";
 
     for (int opt; (opt = getopt(argc, argv, "o:f:v")) != -1;) {
@@ -96,9 +103,16 @@ int main(int argc, char *argv[])
             break;
 
         default:
-            filepath = argv[optind];
-            break;
+            fmt::println(stderr, "unknown command line option '{}'", opt);
+            fmt::println(stderr, "{}", Usage);
+            return 1;
         }
+    }
+
+    if (filepath == "?") {
+        fmt::println(stderr, "no source filepath provided");
+        fmt::println(stderr, "{}", Usage);
+        return 1;
     }
 
     return qcc::x86_compile(filepath, output, verbose);

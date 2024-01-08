@@ -51,10 +51,9 @@ Object *Ast::decode_designated_expression(Expression *expression)
             return decode_designated_expression(unary_expression->operand);
     }
 
-    case Expression_Binary: {
-        Binary_Expression *binary_expression = (Binary_Expression *)expression;
-        if (binary_expression->operation.type & (Token_Mask_Binary_Assign))
-            return decode_designated_expression(binary_expression->lhs);
+    case Expression_Assign: {
+        Assign_Expression *assign_expression = (Assign_Expression *)expression;
+        return decode_designated_expression(assign_expression->lhs);
     }
 
     case Expression_Nested: {
@@ -254,7 +253,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Int: {
         Int_Expression *int_expression = (Int_Expression *)expression;
         Ws, fmt::print(stream, "Int_Expression (");
-        fmt::print(stream, "type: {}, ", int_expression->type.token.str);
+        fmt::print(stream, "type: {}, ", int_expression->type.name());
         fmt::print(stream, "flags: {}, ", int_expression->flags);
         if (int_expression->type.mods & (Type_Unsigned))
             fmt::print(stream, "value: {}", (uint64)int_expression->value);
@@ -267,7 +266,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Float: {
         Float_Expression *float_expression = (Float_Expression *)expression;
         Ws, fmt::print(stream, "Float_Expression (");
-        fmt::print(stream, "type: {}, ", float_expression->type.token.str);
+        fmt::print(stream, "type: {}, ", float_expression->type.name());
         fmt::print(stream, "value: {}", float_expression->value);
         fmt::println(stream, "): ");
         return;
@@ -300,8 +299,8 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Cast: {
         Cast_Expression *cast_expression = (Cast_Expression *)expression;
         Ws, fmt::print(stream, "Cast_Expression (");
-        fmt::print(stream, "from: {}, ", cast_expression->from->token.str);
-        fmt::print(stream, "into: {}, ", cast_expression->into->token.str);
+        fmt::print(stream, "from: {}, ", cast_expression->from->name());
+        fmt::print(stream, "into: {}, ", cast_expression->into->name());
         fmt::println(stream, "): ");
 
         fmt::println(stream, "*Expression: ");
@@ -322,7 +321,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
-        Ws, fmt::println(stream, "Deref_Expression (type: {}): ", deref_expression->type->token.str);
+        Ws, fmt::println(stream, "Deref_Expression (type: {}): ", deref_expression->type->name());
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, deref_expression->object, indent + 1);
         return;
@@ -330,7 +329,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Address: {
         Address_Expression *address_expression = (Address_Expression *)expression;
-        Ws, fmt::println(stream, "Address_Expression (type: {}): ", address_expression->type.token.str);
+        Ws, fmt::println(stream, "Address_Expression (type: {}): ", address_expression->type.name());
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, address_expression->object, indent + 1);
         return;
@@ -338,7 +337,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
 
     case Expression_Ref: {
         Ref_Expression *ref_expression = (Ref_Expression *)expression;
-        Ws, fmt::println(stream, "Ref_Expression (type: {}): ", ref_expression->type->token.str);
+        Ws, fmt::println(stream, "Ref_Expression (type: {}): ", ref_expression->type->name());
         Ws, fmt::println(stream, "*Object");
         dump_object(stream, ref_expression->object, indent + 1);
         return;
@@ -355,7 +354,7 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
     case Object_Function: {
         Function *function = (Function *)object;
         Ws, fmt::print(stream, "Function (");
-        fmt::print(stream, "return_type: {}, ", function->return_type.token.str);
+        fmt::print(stream, "return_type: {}, ", function->return_type.name());
         fmt::print(stream, "name: {}, ", function->name.str);
         fmt::print(stream, "stack_size: {}", function->stack_size);
         fmt::println(stream, "): ");
@@ -371,7 +370,7 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
         Variable *variable = (Variable *)object;
         Ws, fmt::print(stream, "Variable (");
         fmt::print(stream, "name: {}, ", variable->name.str);
-        fmt::print(stream, "type: {}, ", variable->type.token.str);
+        fmt::print(stream, "type: {}, ", variable->type.name());
         fmt::print(stream, "define_mode: {}, ", define_mode_str(variable->env));
         fmt::print(stream, "meta: {}, ", variable->meta);
 
@@ -402,7 +401,7 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
 
     case Object_Record: {
         Record *record = (Record *)object;
-        Ws, fmt::println(stream, "Record (type: {})", record->type.token.str);
+        Ws, fmt::println(stream, "Record (type: {})", record->type.name());
         return;
     }
 

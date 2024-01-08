@@ -92,6 +92,7 @@ TEST(X86, Common)
     Expect_Ok("struct.c");
     Expect_Ok("header.c");
     Expect_Ok("precedence.c");
+    Expect_Ok("binary_assignment.c");
 }
 
 } // namespace qcc

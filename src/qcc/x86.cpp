@@ -226,9 +226,10 @@ void X86::emit_ref_expression(Ref_Expression *ref_expression, Register regs)
 // - We need to know what registers are in use at any time for allocation and save during invoke
 void X86::emit_binary_expression(Binary_Expression *binary_expression, Register regs)
 {
-    emit_expression(binary_expression->lhs, Rax), emit_push(&Rax);
+    emit_expression(binary_expression->lhs, Rax);
+    emit_push(&Rax);
 
-    if (binary_expression->operation.type & (Token_Mask_Shift))
+    if (binary_expression->operation.type & (Token_Shift_L | Token_Shift_R))
         emit_expression(binary_expression->rhs, Rcx);
     else
         emit_expression(binary_expression->rhs, Rdi);
@@ -239,23 +240,18 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
     emit_pop(&Rax);
     switch (binary_expression->operation.type) {
     case Token_Add:
-    case Token_Add_Assign:
         fmt::println(stream, "    {}add rax, rdi", f);
         break;
     case Token_Sub:
-    case Token_Sub_Assign:
         fmt::println(stream, "    {}sub rax, rdi", f);
         break;
     case Token_Mul:
-    case Token_Mul_Assign:
         fmt::println(stream, "    {}{}mul rax, rdi", i, f);
         break;
     case Token_Div:
-    case Token_Div_Assign:
         fmt::println(stream, "    {}{}div rax, rdi", i, f);
         break;
     case Token_Mod:
-    case Token_Mod_Assign:
         fmt::println(stream, "    mod rax, rdi");
         break;
 
@@ -291,25 +287,20 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
         break;
 
     case Token_Bitwise_And:
-    case Token_Bin_And_Assign:
         fmt::println(stream, "    and rax, rdi");
         break;
     case Token_Bitwise_Or:
-    case Token_Bin_Or_Assign:
         fmt::println(stream, "    or rax, rdi");
         break;
     case Token_Bitwise_Xor:
-    case Token_Bin_Xor_Assign:
         fmt::println(stream, "    xor rax, rdi");
         break;
 
     // sal/sar instructions uses the count register
     case Token_Shift_L:
-    case Token_Shift_L_Assign:
         fmt::println(stream, "    sal rax, cl");
         break;
     case Token_Shift_R:
-    case Token_Shift_R_Assign:
         fmt::println(stream, "    sar rax, cl");
         break;
 
@@ -317,11 +308,6 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
         break;
     }
 
-    if (binary_expression->operation.type & (Token_Mask_Binary_Assign)) {
-        Object *object = ast.decode_designated_expression(binary_expression);
-        int64 size = object->object_type()->size;
-        emit_mov(object->source(), &Rax, size);
-    }
     if (regs.gpr != Rax.gpr) {
         fmt::println(stream, "    mov {}, rax", regs[8]);
     }
@@ -494,8 +480,7 @@ void X86::emit_deref_expression(Deref_Expression *deref_expression, Register reg
     Source *address_source = deref_expression->object->source();
     qcc_assert(address_source != NULL, "object is not sourced");
     emit_mov(&regs, address_source, 8);
-    
-    
+
     size_t size = deref_expression->type->size;
     Register indirect = regs.with_indirection();
     emit_mov(&regs, &indirect, size);

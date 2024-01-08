@@ -41,7 +41,7 @@ void Parser::parse_type_cvr(Type *type, Token token, uint32 cvr_allowed)
 
     if (cvr_allowed & ~type->cvr) {
         std::string_view cvr_disallowed = type_cvr_name(Type_Cvr{cvr_allowed & ~type->cvr});
-        throw errorf("cannot use '{}' on type '{}'", token, cvr_disallowed, type->token.str);
+        throw errorf("cannot use '{}' on type '{}'", token, cvr_disallowed, type->name());
     }
 }
 
@@ -634,16 +634,6 @@ Expression *Parser::parse_expression(Expression *previous, int32 precedence)
     case Token_Less_Eq:
     case Token_Greater:
     case Token_Greater_Eq:
-    case Token_Add_Assign:
-    case Token_Sub_Assign:
-    case Token_Mul_Assign:
-    case Token_Div_Assign:
-    case Token_Mod_Assign:
-    case Token_Shift_L_Assign:
-    case Token_Shift_R_Assign:
-    case Token_Bin_And_Assign:
-    case Token_Bin_Xor_Assign:
-    case Token_Bin_Or_Assign:
     case Token_And:
     case Token_Or:
         expression = parse_binary_expression(token, previous, precedence);
@@ -828,7 +818,7 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
 
     if (unary_expression->type->kind & ~Type_Scalar) {
         throw errorf("cannot use operand on expression of type '{}'", operation,
-                     type_system.name(unary_expression->type));
+                     unary_expression->type->name());
     }
 
     return unary_expression;
@@ -836,10 +826,18 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
 
 Expression *Parser::parse_binary_expression(Token operation, Expression *previous, int32 precedence)
 {
+    if (Token assign = scan(Token_Assign); assign.ok) {
+        // Any binary operator followed by '=' is understood as: lhs = lhs <op> rhs
+	enqueue(operation);
+        Expression *expression = parse_expression(previous, Lowest_Precedence);
+        Expression *assign_expression = parse_assign_expression(assign, previous, expression);
+        return assign_expression;
+    }
+
     int32 precedence_now = binary_operator_precedence(operation.type);
     if (precedence_now >= precedence) {
-        previous->endpoint = true;
         enqueue(operation);
+        previous->endpoint = true;
         return previous;
     }
 
@@ -862,16 +860,10 @@ Expression *Parser::parse_binary_expression(Token operation, Expression *previou
 
     binary_expression->rhs = cast_if_needed(operation, binary_expression->rhs, lhs_type);
 
-    if (operation.type & Token_Mask_Binary_Assign) {
-        Object *object = ast.decode_designated_expression(binary_expression->lhs);
-        if (!object or !object->has_assign()) {
-            throw errorf("left-hand side expression is not assignable", operation);
-        }
-    }
-    if (operation.type & (Token_Mod | Token_Mod_Assign | Token_Mask_Bin) and
+    if (operation.type & (Token_Mod | Token_Mask_Bin) and
         binary_expression->type->kind & (Type_Float | Type_Double)) {
         throw errorf("cannot perform binary operation '{}' on floating type '{}'", operation, operation.str,
-                     type_system.name(binary_expression->type));
+                     binary_expression->type->name());
     }
 
     return binary_expression;
@@ -975,14 +967,12 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
     dot_expression->struct_statement = type->struct_statement;
 
     if (!type->struct_statement->members.contains(name.str)) {
-        std::string type_name = type_system.name(type);
-        throw errorf("member '{}.{}' is undeclared", name, type_name, name.str);
+        throw errorf("member '{}.{}' is undeclared", name, type->name(), name.str);
     }
 
     dot_expression->member = type->struct_statement->members[name.str];
     if (!dot_expression->member) {
-        std::string type_name = type_system.name(type);
-        throw errorf("member '{}.{}' is not a variable member", name, type_name, name.str);
+        throw errorf("member '{}.{}' is not a variable member", name, type->name(), name.str);
     }
 
     return dot_expression;
@@ -1047,87 +1037,13 @@ Expression *Parser::cast_if_needed(Token token, Expression *expression, Type *ty
     uint32 type_cast = type_system.cast(expression_type, type);
 
     if (type_cast & Type_Cast_Error) {
-        throw errorf("cannot cast type '{}' into '{}'", token, type_system.name(expression_type),
-                     type_system.name(type));
+        throw errorf("cannot cast type '{}' into '{}'", token, expression_type->name(), type->name());
     }
     if (type_cast > Type_Cast_Same) {
         return parse_cast_expression(token, expression, type);
     }
     return expression;
 }
-
-// void Parser::into_binary_sequence(Binary_Sequence *sequence, Expression *expression)
-// {
-//     if (!expression)
-//         return;
-//     if (expression->kind() & Expression_Binary) {
-//         Binary_Expression *binary_expression = (Binary_Expression *)expression;
-//         sequence->push_back(binary_expression);
-//         into_binary_sequence(sequence, binary_expression->lhs);
-//         into_binary_sequence(sequence, binary_expression->rhs);
-//     }
-// }
-
-// void Parser::sort_binary_sequence(Binary_Sequence *sequence)
-// {
-//     ranges::sort(*sequence, [&](Binary_Expression *v, Binary_Expression *w) -> bool {
-//         return ast.binary_operation_precedence(v->operation.type) <
-//                ast.binary_operation_precedence(w->operation.type);
-//     });
-// }
-
-// void print_rpn_expression(std::string_view name, Rpn_Expression *rpn_expression)
-// {
-//     fmt::print("{}:\t", name);
-//     for (size_t i = 0; i < rpn_expression->expressions.size(); i++) {
-//         Expression *expression = rpn_expression->expressions[i];
-
-//         switch (expression->kind()) {
-//         case Expression_Id:
-//             fmt::print("{}", ((Id_Expression *)expression)->str());
-//             break;
-//         case Expression_Int:
-//             fmt::print("{}", ((Int_Expression *)expression)->value);
-//             break;
-//         case Expression_Invoke:
-//             fmt::print("{}()", ((Invoke_Expression *)expression)->function->name.str);
-//             break;
-//         default:
-//             fmt::print("{}", fmt::ptr(expression));
-//             break;
-//         }
-//         if (i < rpn_expression->expressions.size() - 1)
-//             fmt::print(", ");
-//     }
-//     fmt::print(" | ");
-//     for (size_t i = 0; i < rpn_expression->operations.size(); i++) {
-//         fmt::print("{}", token_type_str(rpn_expression->operations[i].type));
-//         if (i < rpn_expression->operations.size() - 1)
-//             fmt::print(", ");
-//     }
-//     fmt::print("\n");
-// }
-
-// Binary_Expression *Parser::into_binary_expression(Binary_Sequence *sequence)
-// {
-//     if (sequence->empty())
-//         return NULL;
-
-//     Binary_Expression *binary_expression = sequence->back();
-//     sequence->pop_back();
-
-//     binary_expression->lhs = into_binary_expression(sequence);
-//     binary_expression->rhs = into_binary_expression(sequence);
-//     return binary_expression;
-// }
-
-// Binary_Expression *Parser::sort_binary_expression(Binary_Expression *source)
-// {
-//     Binary_Sequence sequence = {};
-//     into_binary_sequence(&sequence, source);
-//     sort_binary_sequence(&sequence);
-//     return into_binary_expression(&sequence);
-// }
 
 Scope_Statement *Parser::context_scope()
 {
@@ -1265,7 +1181,7 @@ Token Parser::scan(int128 mask)
 
 Token Parser::enqueue(Token token)
 {
-    return token_queue.emplace_back(token);
+    return token_queue.emplace_front(token);
 }
 
 Token Parser::expect(int128 mask, std::string_view context)

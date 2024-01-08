@@ -112,21 +112,10 @@ Syntax_Map syntax_map_c89()
         {Token_Crochet_End, "']'"},
 
         {Token_Assign, "'='"},
-        {Token_Add_Assign, "'+='"},
-        {Token_Sub_Assign, "'-='"},
-        {Token_Mul_Assign, "'*='"},
-        {Token_Div_Assign, "'/='"},
-        {Token_Mod_Assign, "'%='"},
-        {Token_Shift_L_Assign, "'<<='"},
-        {Token_Shift_R_Assign, "'<<='"},
-        {Token_Bin_And_Assign, "'&='"},
-        {Token_Bin_Xor_Assign, "'^='"},
-        {Token_Bin_Or_Assign, "'^='"},
-
         {Token_Add, "'+'"},
         {Token_Sub, "'-'"},
         {Token_Div, "'/'"},
-        {Token_Mod, "'%='"},
+        {Token_Mod, "'%'"},
 
         {Token_Not, "'!'"},
         {Token_And, "'&&'"},
