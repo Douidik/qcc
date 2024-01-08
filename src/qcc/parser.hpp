@@ -57,6 +57,7 @@ struct Parser
     Expression *parse_unary_expression(Token operation, Expression_Order order, Expression *operand,
                                        int32 precedence);
     Expression *parse_binary_expression(Token operation, Expression *lhs, int32 precedence);
+    Expression *parse_binary_assign_expression(Token operation, Expression *lhs);
     Id_Expression *parse_id_expression(Token token);
     String_Expression *parse_string_expression(Token token);
     Int_Expression *parse_int_expression(Token token);
@@ -73,8 +74,11 @@ struct Parser
 
     Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Ref_Expression *parse_ref_expression(Object *object, Type *type);
-    Expression *cast_if_needed(Token token, Expression *expression, Type *type);
 
+    Expression *cast_if_needed(Token token, Expression *expression, Type *type);
+    Expression *binary_expression_typecheck(Binary_Expression *binary_expression);
+
+    
     // void into_binary_sequence(Binary_Sequence *sequence, Expression *expression);
     // void sort_binary_sequence(Binary_Sequence *sequence);
     // Binary_Expression *into_binary_expression(Binary_Sequence *sequence);

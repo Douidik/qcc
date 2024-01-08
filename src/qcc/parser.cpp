@@ -824,28 +824,40 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
     return unary_expression;
 }
 
-Expression *Parser::parse_binary_expression(Token operation, Expression *previous, int32 precedence)
+Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, int32 precedence)
 {
     if (Token assign = scan(Token_Assign); assign.ok) {
-        // Any binary operator followed by '=' is understood as: lhs = lhs <op> rhs
-	enqueue(operation);
-        Expression *expression = parse_expression(previous, Lowest_Precedence);
-        Expression *assign_expression = parse_assign_expression(assign, previous, expression);
-        return assign_expression;
+        return parse_binary_assign_expression(operation, lhs);
     }
 
     int32 precedence_now = binary_operator_precedence(operation.type);
     if (precedence_now >= precedence) {
         enqueue(operation);
-        previous->endpoint = true;
-        return previous;
+        lhs->endpoint = true;
+        return lhs;
     }
 
     Binary_Expression *binary_expression = ast.push(new Binary_Expression{});
     binary_expression->operation = operation;
-    binary_expression->lhs = previous;
+    binary_expression->lhs = lhs;
     binary_expression->rhs = parse_expression(NULL, precedence_now);
+    return binary_expression_typecheck(binary_expression);
+}
 
+Expression *Parser::parse_binary_assign_expression(Token operation, Expression *lhs)
+{
+    Binary_Expression *binary_expression = ast.push(new Binary_Expression{});
+    binary_expression->operation = operation;
+    binary_expression->lhs = lhs;
+    binary_expression->rhs = parse_expression(NULL, Lowest_Precedence);
+    binary_expression_typecheck(binary_expression);
+
+    return parse_assign_expression(operation, lhs, binary_expression);
+}
+
+Expression *Parser::binary_expression_typecheck(Binary_Expression *binary_expression)
+{
+    Token operation = binary_expression->operation;
     if (!binary_expression->lhs)
         throw errorf("missing left-hand side expression in binary expression", operation);
 
