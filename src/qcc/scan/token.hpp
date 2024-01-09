@@ -134,15 +134,16 @@ const int128 Token_Mask_Each = ~((int128)0);
 
 const int128 Token_Mask_Skip = Token_Blank | Token_Comment;
 
-const int128 Token_Mask_Operator = Token_Increment | Token_Decrement | Token_Add | Token_Sub | Token_Mul |
-                                   Token_Div | Token_Mod | Token_Not | Token_Bitwise_Not | Token_Bitwise_And |
-                                   Token_Bitwise_Or | Token_Bitwise_Xor | Token_Shift_L | Token_Shift_R |
-                                   Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater |
-                                   Token_Greater_Eq | Token_And | Token_Or;
+const int128 Token_Mask_Compare =
+    Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq;
+
+const int128 Token_Mask_Operator = Token_Mask_Compare | Token_Increment | Token_Decrement | Token_Add |
+                                   Token_Sub | Token_Mul | Token_Div | Token_Mod | Token_Not |
+                                   Token_Bitwise_Not | Token_Bitwise_And | Token_Bitwise_Or |
+                                   Token_Bitwise_Xor | Token_Shift_L | Token_Shift_R | Token_And | Token_Or;
 
 const int128 Token_Mask_Expression = Token_Mask_Operator | Token_Id | Token_Char | Token_String | Token_Int |
-                                     Token_Int_Bin | Token_Int_Hex | Token_Float |
-
+                                     Token_Int_Bin | Token_Int_Hex | Token_Float | Token_Crochet_Begin |
                                      Token_Paren_Begin | Token_Assign | Token_Dot | Token_Arrow | Token_Deref;
 
 const int128 Token_Mask_Statement = Token_Scope_Begin | Token_If | Token_While | Token_For;

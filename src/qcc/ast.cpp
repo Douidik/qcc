@@ -370,8 +370,8 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
         Variable *variable = (Variable *)object;
         Ws, fmt::print(stream, "Variable (");
         fmt::print(stream, "name: {}, ", variable->name.str);
-        fmt::print(stream, "type: {}, ", variable->type.name());
-        fmt::print(stream, "define_mode: {}, ", define_mode_str(variable->env));
+        fmt::print(stream, "type: {}, ", variable->type()->name());
+        fmt::print(stream, "define_env: {}, ", define_env_str(variable->env));
         fmt::print(stream, "meta: {}, ", variable->meta);
 
         switch (variable->location) {
@@ -401,7 +401,7 @@ void Ast::dump_object(std::ostream &stream, Object *object, int32 indent)
 
     case Object_Record: {
         Record *record = (Record *)object;
-        Ws, fmt::println(stream, "Record (type: {})", record->type.name());
+        Ws, fmt::println(stream, "Record (type: {})", record->type()->name());
         return;
     }
 

@@ -16,7 +16,7 @@ Object *Scope_Statement::object(std::string_view name)
 Record *Scope_Statement::record(Type_Kind kind, std::string_view name)
 {
     if (records.contains(name)) {
-        if (records[name]->type.kind != kind)
+        if (records[name]->type()->kind != kind)
             return NULL;
         return records[name];
     }

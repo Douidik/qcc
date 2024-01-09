@@ -53,7 +53,7 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
     std::string source = fstream_to_str(filepath);
     Scanner scanner = {source, filepath.parent_path()};
 
-    Parser parser = {ast, scanner};
+    Parser parser = {ast, scanner, false};
     parser.parse();
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();

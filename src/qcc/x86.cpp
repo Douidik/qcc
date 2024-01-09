@@ -121,7 +121,7 @@ void X86::emit_define_statement(Define_Statement *define_statement)
     emit_expression(define_statement->expression, Rax);
 
     Variable *variable = define_statement->variable;
-    int64 size = variable->type.size;
+    int64 size = variable->type()->size;
     emit_mov(variable, &Rax, size);
 
     if (define_statement->next != NULL)
@@ -210,19 +210,19 @@ void X86::emit_int_expression(Int_Expression *int_expression, Register regs)
 void X86::emit_id_expression(Id_Expression *id_expression, Register regs)
 {
     Variable *variable = (Variable *)id_expression->object;
-    emit_mov(&regs, variable, variable->type.size);
+    emit_mov(&regs, variable, variable->type()->size);
 }
 
 void X86::emit_ref_expression(Ref_Expression *ref_expression, Register regs)
 {
     Object *object = (Variable *)ref_expression->object;
-    emit_mov(&regs, object->source(), object->object_type()->size);
+    emit_mov(&regs, object->source(), object->type()->size);
 }
 
 // Hack! for now, we just push rax before fetching the rhs operand, we emit the binary
 // operations with only two registers. Maybe find a way to use more register:
 // - Some registers are not suitable for some instructions (eg: div)
-// - Allocate stack memory when no registers are left
+// - Allocate stack memory when no registers left
 // - We need to know what registers are in use at any time for allocation and save during invoke
 void X86::emit_binary_expression(Binary_Expression *binary_expression, Register regs)
 {
@@ -236,6 +236,11 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
 
     const char *f = (binary_expression->type->kind & Type_Fpr) ? "f" : "";
     const char *i = (binary_expression->type->mods & Type_Signed) ? "i" : "";
+
+    if (binary_expression->type->kind & Type_Pointer) {
+        int64 size = binary_expression->type->pointed_type->size;
+        fmt::println(stream, "    imul rdi, {}", size);
+    }
 
     emit_pop(&Rax);
     switch (binary_expression->operation.type) {
@@ -315,12 +320,11 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
 
 void X86::emit_unary_expression(Unary_Expression *unary_expression, Register regs)
 {
-    bool is_increment = unary_expression->operation.type & (Token_Increment | Token_Decrement);
+    if (unary_expression->operation.type & (Token_Increment | Token_Decrement)) {
+        return emit_increment_expression(unary_expression, regs);
+    }
+
     emit_expression(unary_expression->operand, Rax);
-
-    if (is_increment and unary_expression->order == Expression_Lhs)
-        fmt::println(stream, "    push [rsp]");
-
     switch (unary_expression->operation.type) {
     case Token_Sub:
         fmt::println(stream, "    neg rax");
@@ -333,20 +337,39 @@ void X86::emit_unary_expression(Unary_Expression *unary_expression, Register reg
     case Token_Bitwise_Not:
         fmt::println(stream, "    not rax");
         break;
-    case Token_Increment:
-        fmt::println(stream, "    inc rax");
-        break;
-    case Token_Decrement:
-        fmt::println(stream, "    dec rax");
-        break;
     default:
         break;
     }
-    if (is_increment and unary_expression->order == Expression_Rhs) {
-        Object *object = ast.decode_designated_expression(unary_expression);
-        int64 size = object->object_type()->size;
-        emit_mov(object->source(), &Rax, size);
+}
+
+void X86::emit_increment_expression(Unary_Expression *unary_expression, Register regs)
+{
+    // (++x): use the provided register for the operation
+    // (x++): use an intermediate register for the operation
+    //        the provided register remains unchanged
+    // in both cases the designated object is directly affected by the increment
+    emit_expression(unary_expression->operand, regs);
+
+    if (unary_expression->order == Expression_Lhs) {
+        emit_mov(&Rax, &regs, unary_expression->type->size);
+        regs = Rax;
     }
+
+    if (unary_expression->type->kind & (Type_Pointer)) {
+        int64 size = unary_expression->type->pointed_type->size;
+        if (unary_expression->operation.type & Token_Increment)
+            fmt::println(stream, "    add {}, {}", regs[8], size);
+        if (unary_expression->operation.type & Token_Decrement)
+            fmt::println(stream, "    sub {}, {}", regs[8], size);
+    } else {
+        if (unary_expression->operation.type & Token_Increment)
+            fmt::println(stream, "    inc {}", regs[8]);
+        if (unary_expression->operation.type & Token_Decrement)
+            fmt::println(stream, "    dec {}", regs[8]);
+    }
+
+    Source destination = emit_expression_source(unary_expression->operand, Rdi);
+    emit_mov(&destination, &regs, unary_expression->type->size);
 }
 
 void X86::emit_invoke_expression(Invoke_Expression *invoke_expression, Register regs)
@@ -428,7 +451,7 @@ void X86::emit_assign_expression(Assign_Expression *assign_expression, Register 
 void X86::emit_dot_expression(Dot_Expression *dot_expression, Register regs)
 {
     Source source = emit_expression_source(dot_expression, regs);
-    emit_mov(&regs, &source, dot_expression->member->type.size);
+    emit_mov(&regs, &source, dot_expression->member->type()->size);
 }
 
 Source X86::emit_expression_source(Expression *expression, Register regs)

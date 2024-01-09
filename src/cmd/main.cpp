@@ -34,7 +34,7 @@ std::string make_build_filepath(std::string_view filename, std::string_view exte
 
 int x86_compile(fs::path filepath, fs::path output, bool verbose)
 {
-    fs::path directory = fs::temp_directory_path();
+    fs::path directory = filepath.parent_path();
     std::string filename = filepath.stem().string();
     std::string filepath_asm = make_build_filepath(filename, ".s");
     std::string filepath_obj = make_build_filepath(filename, ".o");
@@ -53,7 +53,7 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
 
     std::string source = fstream_to_str(std::move(source_fstream));
     Scanner scanner = {source, filepath.parent_path()};
-    Parser parser = {ast, scanner};
+    Parser parser = {ast, scanner, verbose};
     parser.parse();
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();
@@ -66,11 +66,13 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
     fstream_asm.close();
 
     if (exec_cmd("nasm -g -f elf64 {}", filepath_asm) != 0) {
-        fmt::println(stderr, "nasm command failed");
+        fmt::println(stderr, "nasm command failed with:");
+        fmt::println(stdout, "{}", fstream_to_str(std::fstream{filepath_asm}));
         return 1;
     }
     if (exec_cmd("ld -m elf_x86_64 {} -o {}", filepath_obj, output.string()) != 0) {
-        fmt::println(stderr, "ld command failed");
+        fmt::println(stderr, "ld command failed with:");
+        fmt::println(stdout, "{}", fstream_to_str(std::fstream{filepath_obj}));
         return 1;
     }
     return 0;

@@ -32,6 +32,7 @@ enum Expression_Kind : uint32
 
 enum Expression_Order : uint32
 {
+    Expression_Order_None,
     Expression_Lhs,
     Expression_Rhs,
 };

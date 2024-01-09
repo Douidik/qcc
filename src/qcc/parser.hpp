@@ -2,7 +2,7 @@
 #define QCC_PARSER_HPP
 
 #include "fwd.hpp"
-#include "precedence.hpp"
+#include "operators.hpp"
 #include "scan/scanner.hpp"
 #include "source_snippet.hpp"
 #include "type_system.hpp"
@@ -10,7 +10,12 @@
 namespace qcc
 {
 
-typedef std::vector<Binary_Expression *> Binary_Sequence;
+struct Declarator
+{
+    Type type;
+    Token name;
+    bool has_matched_function;
+};
 
 struct Parser
 {
@@ -19,23 +24,27 @@ struct Parser
     Type_System type_system;
     std::deque<Token> token_queue;
     std::deque<Statement *> context;
-
-    Parser(Ast &ast, Scanner &scanner);
+    bool verbose;
+    
+    Parser(Ast &ast, Scanner &scanner, bool verbose);
 
     Statement *parse();
     Statement *parse_statement();
     void parse_type_cvr(Type *type, Token token, uint32 cvr_allowed);
     Type parse_type();
-    Type parse_pointer_type(Type pointed_type);
+
+    Declarator parse_declarator(Type type_base, Define_Env env);
+    Type parse_pointer_declarator(Type pointed_type);
+    Type parse_array_declarator(Type array_type);
+
     Type *parse_struct_type(Token keyword);
     Struct_Statement *parse_struct_statement(Token keyword);
 
-    Statement *parse_define_or_function_statement();
-    Define_Statement *parse_define_statement(Type type, Token name, Define_Env mode,
-                                             Define_Statement *previous, int128 end_mask);
-    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement, Define_Env env,
-                                                   int128 end_mask);
-    Function_Statement *parse_function_statement(Type return_type, Token name);
+    Statement *parse_define_statement(Type type_base, Define_Env env, Define_Statement *previous,
+                                      int128 end_mask);
+    Define_Statement *parse_comma_define_statement(Define_Statement *define_statement, Type type_base,
+                                                   Define_Env env, int128 end_mask);
+    Function_Statement *parse_function_statement(Declarator declarator);
     Scope_Statement *parse_scope_statement(Scope_Statement *scope_statement, uint32 statement_mask,
                                            int128 end_mask);
 
@@ -53,7 +62,7 @@ struct Parser
     Expression_Statement *parse_expression_statement();
     Expression *parse_expression(Expression *previous = NULL, int32 precedence = Lowest_Precedence);
     Comma_Expression *parse_comma_expression(Token token, Expression *expression);
-    Expression *parse_increment_expression(Token operation, Expression *previous, int32 precedence);
+    Expression *parse_increment_expression(Token operation, Expression *operand, int32 precedence);
     Expression *parse_unary_expression(Token operation, Expression_Order order, Expression *operand,
                                        int32 precedence);
     Expression *parse_binary_expression(Token operation, Expression *lhs, int32 precedence);
@@ -71,23 +80,21 @@ struct Parser
     Dot_Expression *parse_arrow_expression(Token token, Expression *previous);
     Deref_Expression *parse_deref_expression(Token token, Expression *operand);
     Address_Expression *parse_address_expression(Token token, Expression *operand);
-
+    Subscript_Expression *parse_subscript_expression(Token token, Expression *operand);
     Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Ref_Expression *parse_ref_expression(Object *object, Type *type);
 
     Expression *cast_if_needed(Token token, Expression *expression, Type *type);
-    Expression *binary_expression_typecheck(Binary_Expression *binary_expression);
-
-    
-    // void into_binary_sequence(Binary_Sequence *sequence, Expression *expression);
-    // void sort_binary_sequence(Binary_Sequence *sequence);
-    // Binary_Expression *into_binary_expression(Binary_Sequence *sequence);
-    // Binary_Expression *sort_binary_expression(Binary_Expression *source);
-
-    Scope_Statement *context_scope();
-    Statement *context_of(uint32 statement_mask);
+    Expression *typecheck_binary_expression(Binary_Expression *binary_expression);
+    Expression *typecheck_unary_expression(Unary_Expression *unary_expression);
     int64 parse_constant(Token token, Expression *expression);
 
+    bool token_is_typedef(Token token);
+    Scope_Statement *context_scope();
+    Statement *context_of(uint32 statement_mask);
+    Statement *context_push(Statement *statement);
+    Statement *context_pop();
+    
     bool is_eof() const;
     Token peek_until(int128 mask);
     Token peek(int128 mask);

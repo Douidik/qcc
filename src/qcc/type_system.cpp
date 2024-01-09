@@ -53,8 +53,8 @@ size_t Type::alignment()
     case Type_Union:
     case Type_Struct: {
         size_t struct_alignment = 0;
-        for (Variable *member : std::views::values(struct_statement->members)) {
-            struct_alignment = std::max(struct_alignment, member->type.alignment());
+        for (auto [_, member] : struct_statement->members) {
+            struct_alignment = std::max(struct_alignment, member->type()->alignment());
         }
         return struct_alignment;
     }
@@ -98,13 +98,15 @@ Type *Type_System::expression_type(Expression *expression)
         return &((Address_Expression *)expression)->type;
     case Expression_Deref:
         return ((Deref_Expression *)expression)->type;
+    case Expression_Subscript:
+        return ((Subscript_Expression *)expression)->type;
     case Expression_Id: {
         Id_Expression *id_expression = (Id_Expression *)expression;
-        return id_expression->object->object_type();
+        return id_expression->object->type();
     }
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
-        return &dot_expression->member->type;
+        return dot_expression->member->type();
     }
     case Expression_Comma: {
         Comma_Expression *comma_expression = (Comma_Expression *)expression;
@@ -145,8 +147,8 @@ uint32 Type_System::cast(Type *from, Type *into)
         while (from_parameter and into_parameter) {
             if (from_parameter != NULL ^ into_parameter != NULL)
                 return Type_Cast_Error;
-            Type *from_parameter_type = &from_parameter->variable->type;
-            Type *into_parameter_type = &into_parameter->variable->type;
+            Type *from_parameter_type = from_parameter->variable->type();
+            Type *into_parameter_type = into_parameter->variable->type();
             worst_parameter_cast |= cast(from_parameter_type, into_parameter_type);
 
             from_parameter = from_parameter->next;
@@ -206,9 +208,9 @@ size_t Type_System::struct_size(Type *type)
 
     for (Variable *member : std::views::values(type->struct_statement->members)) {
         if (type->kind & Type_Union)
-            size = std::max(size, member->type.size);
+            size = std::max(size, member->type()->size);
         if (type->kind & Type_Struct)
-            size += member->type.size;
+            size += member->type()->size;
     }
     return size;
 }

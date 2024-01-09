@@ -12,14 +12,14 @@
 namespace qcc
 {
 
-Parser::Parser(Ast &ast, Scanner &scanner) : ast(ast), scanner(scanner) {}
+Parser::Parser(Ast &ast, Scanner &scanner, bool verbose) : ast(ast), scanner(scanner), verbose(verbose) {}
 
 Statement *Parser::parse()
 {
     ast.main_statement = new Scope_Statement{};
-    context.push_back(ast.main_statement);
+    context_push(ast.main_statement);
     parse_scope_statement(ast.main_statement, (Statement_Define | Statement_Function), Token_Eof);
-    context.pop_back();
+    context_pop();
     return ast.main_statement;
 }
 
@@ -51,8 +51,7 @@ Type Parser::parse_type()
     Type type = {};
     type.size = -1;
     bool type_mods_allowed = true;
-    bool inside_pointer = false;
-    int128 mask = Token_Mask_Type | Token_Mask_Record | Token_Id | Token_Pointer;
+    int128 mask = Token_Mask_Type | Token_Mask_Record | Token_Id;
 
     while ((token = scan(mask)).ok) {
         if (token.type & Token_Mask_Type_Cvr) {
@@ -78,7 +77,7 @@ Type Parser::parse_type()
             if (type.mods & Type_Signed and type.mods & Type_Unsigned)
                 throw errorf("type has discordant signedness modifiers", token);
             if (type.mods & Type_Short and type.mods & Type_Long)
-                throw errorf("type has discordant length modifiers", token);
+                throw errorf("type has discordant size modifiers", token);
         }
 
         else if (token.type & (Token_Extern | Token_Register | Token_Static | Token_Auto)) {
@@ -107,21 +106,15 @@ Type Parser::parse_type()
             Typedef *type_def = (Typedef *)context_scope()->object(token.str);
             if (!type_def or type_def->kind() != Object_Typedef)
                 throw errorf("undefined type", token);
-            type_system.merge_type(&type, &type_def->type);
+            type_system.merge_type(&type, type_def->type());
             type_mods_allowed = false;
             mask &= ~Token_Id;
         }
 
         else if (token.type & (Token_Struct | Token_Union)) {
-            // maybe_struct_type = parse_struct_type(token);
             type_system.merge_type(&type, parse_struct_type(token));
             type_mods_allowed = false;
             mask &= ~Token_Id;
-        }
-
-        else if (token.type & Token_Pointer) {
-            inside_pointer = true;
-            mask = 0;
         }
 
         if (type.token.type & Token_Mask_Skip)
@@ -143,16 +136,35 @@ Type Parser::parse_type()
         throw errorf("cannot declare type '{}' with modifiers", token, token.str);
     if (type.kind & Type_Int and !(type.mods & Type_Unsigned))
         type.mods |= Type_Signed;
-    // if (maybe_struct_type != NULL and !inside_pointer) {
-    // Type struct_type = type_system.clone_type(ast, maybe_struct_type);
-    // type_system.merge_type(&type, &struct_type);
-    // }
 
-    return inside_pointer ? parse_pointer_type(type) : type;
+    return type;
 }
 
-Type Parser::parse_pointer_type(Type pointed_type)
+Declarator Parser::parse_declarator(Type type_base, Define_Env env)
 {
+    Declarator declarator = {};
+    declarator.type = type_base;
+    declarator.type = parse_pointer_declarator(declarator.type);
+    declarator.name = scan(Token_Id);
+    declarator.type = parse_array_declarator(declarator.type);
+
+    if (!declarator.name.ok and env != Define_Parameter) {
+        throw errorf("cannot define an anonymous {}", declarator.name, define_env_str(env));
+    }
+    if (peek(Token_Paren_Begin).ok) {
+        declarator.has_matched_function = true;
+        if (env != Define_Unknown)
+            throw errorf("cannot define a function in this environment", declarator.name);
+    }
+
+    return declarator;
+}
+
+Type Parser::parse_pointer_declarator(Type pointed_type)
+{
+    if (!scan(Token_Star).ok) {
+        return pointed_type;
+    }
     Type type = {};
     type.token = pointed_type.token;
     type.kind = Type_Pointer;
@@ -164,7 +176,30 @@ Type Parser::parse_pointer_type(Type pointed_type)
         parse_type_cvr(&type, token_cvr, Type_Const | Type_Volatile | Type_Restrict);
     }
 
-    return scan(Token_Pointer).ok ? parse_pointer_type(type) : type;
+    return parse_pointer_declarator(type);
+}
+
+Type Parser::parse_array_declarator(Type array_type)
+{
+    Token crochet_begin = scan(Token_Crochet_Begin);
+    if (!crochet_begin.ok) {
+        return array_type;
+    }
+
+    Type type = {};
+    type.kind = Type_Array;
+    type.array_type = type_system.orphan_type_push(new Type{array_type});
+
+    Expression *size_expression = parse_expression();
+    if (!size_expression) {
+        qcc_todo("array type size inferrence, depends on array literals");
+    } else {
+        type.size = parse_constant(crochet_begin, size_expression) * array_type.size;
+    }
+
+    Token crochet_end = expect(Token_Crochet_End, "in array type declaration");
+    type.token = array_type.token | crochet_end;
+    return parse_array_declarator(type);
 }
 
 Type *Parser::parse_struct_type(Token keyword)
@@ -177,31 +212,31 @@ Type *Parser::parse_struct_type(Token keyword)
     if (name.ok) {
         record = context_scope()->record(type_kind, name.str);
     }
-    if (record != NULL and record->type.kind != type_kind) {
-        throw errorf("was previously defined as '{}'", keyword | name, type_kind_name(record->type.kind));
+    if (record != NULL and record->type()->kind != type_kind) {
+        throw errorf("was previously defined as '{}'", keyword | name, type_kind_name(record->type()->kind));
     }
-    if (record != NULL and record->type.struct_statement != NULL and scope_begin.ok) {
+    if (record != NULL and record->type()->struct_statement != NULL and scope_begin.ok) {
         throw errorf("redefinition of {} '{}'", keyword | name | scope_begin, keyword.str, name.str);
     }
     if (scope_begin.ok) {
         record = ast.push(new Record{});
         record->name = name;
-        record->type.kind = token_to_type_kind(keyword.type);
-        record->type.token = name;
-        record->type.struct_statement = parse_struct_statement(keyword);
-        record->type.size = type_system.struct_size(&record->type);
+        record->type()->kind = token_to_type_kind(keyword.type);
+        record->type()->token = name;
+        record->type()->struct_statement = parse_struct_statement(keyword);
+        record->type()->size = type_system.struct_size(record->type());
 
-        int64 alignment = record->type.alignment();
+        int64 alignment = record->type()->alignment();
         int64 offset = 0;
-        for (auto [_, member] : record->type.struct_statement->members) {
+        for (auto [_, member] : record->type()->struct_statement->members) {
             member->struct_offset = Round_Up(offset, alignment);
-            offset += member->type.size;
+            offset += member->type()->size;
         }
 
         context_scope()->records[name.str] = record;
     }
 
-    return &record->type;
+    return record->type();
 }
 
 Struct_Statement *Parser::parse_struct_statement(Token keyword)
@@ -209,7 +244,7 @@ Struct_Statement *Parser::parse_struct_statement(Token keyword)
     Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
     struct_statement->keyword = keyword;
     struct_statement->hash = (uint64)struct_statement;
-    context.push_back(struct_statement);
+    context_push(struct_statement);
 
     Define_Env define_env = {};
     if (keyword.type & Token_Struct)
@@ -218,23 +253,17 @@ Struct_Statement *Parser::parse_struct_statement(Token keyword)
         define_env = Define_Union;
 
     while (!peek_until(Token_Scope_End).ok) {
-        Type type = parse_type();
-        Token name = scan(Token_Id);
-        parse_define_statement(type, name, define_env, NULL, Token_Semicolon);
+        parse_define_statement(parse_type(), define_env, NULL, Token_Semicolon);
     }
 
     expect(Token_Scope_End, "after struct scope statement");
-    context.pop_back();
+    context_pop();
     return struct_statement;
 }
 
 Statement *Parser::parse_statement()
 {
     Token token = peek(Token_Mask_Each);
-
-    // Todo! nested scope statement
-    // if (token.type & Token_Scope_Begin)
-    //     return parse_scope_statement(Token_Scope_End);
     if (token.type & Token_If)
         return parse_condition_statement();
     if (token.type & Token_While)
@@ -243,14 +272,8 @@ Statement *Parser::parse_statement()
         return parse_for_statement();
     if (token.type & Token_Return)
         return parse_return_statement();
-    if (token.type & Token_Mask_Type)
-        return parse_define_or_function_statement();
-    if (token.type & Token_Id) {
-        if (Typedef *type_def = (Typedef *)context_scope()->object(token.str);
-            type_def != NULL and type_def->kind() & Object_Typedef) {
-            return parse_define_or_function_statement();
-        }
-    }
+    if (token.type & (Token_Mask_Type) or (token_is_typedef(token)))
+        return parse_define_statement(parse_type(), Define_Unknown, NULL, Token_Semicolon);
     if (token.type & Token_Mask_Expression)
         return parse_expression_statement();
 
@@ -258,51 +281,47 @@ Statement *Parser::parse_statement()
     return NULL;
 }
 
-Statement *Parser::parse_define_or_function_statement()
+Statement *Parser::parse_define_statement(Type type_base, Define_Env env, Define_Statement *previous,
+                                          int128 end_mask)
 {
-    Type type = parse_type();
-    Token name = expect(Token_Id | Token_Semicolon, "after type in define statement");
-
-    if (name.ok and peek(Token_Paren_Begin).ok)
-        return parse_function_statement(type, name);
-    else
-        return parse_define_statement(type, name, Define_Variable, NULL, Token_Semicolon);
-}
-
-Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_Env env,
-                                                 Define_Statement *previous, int128 end_mask)
-{
-    if (name.type & Token_Semicolon)
+    if (scan(Token_Semicolon).ok)
         return NULL;
 
+    Declarator declarator = parse_declarator(type_base, env);
+    if (declarator.has_matched_function)
+        return parse_function_statement(declarator);
+    if (env & Define_Unknown)
+        env = Define_Var;
+
     Define_Statement *define_statement = ast.push(new Define_Statement{});
-    Variable *variable = ast.push(new Variable{});
-    define_statement->variable = variable;
-    variable->env = env;
-    variable->name = name;
-    variable->type = type;
+    auto &[type, name, _] = declarator;
 
     if (type.kind & Type_Void) {
         if (env & Define_Parameter) {
             expect(Token_Paren_End, "after void function parameter");
             return NULL;
         }
-        throw errorf("cannot define variable as void", type.token | name);
+        throw errorf("cannot define {} as void", type.token | name, define_env_str(env));
     }
 
-    context.push_back(define_statement);
+    Variable *variable = ast.push(new Variable{});
+    define_statement->variable = variable;
+    variable->env = env;
+    variable->name = name;
+    variable->var_type = type;
+    context_push(define_statement);
 
-    if (!variable->name.ok) {
+    if (env & Define_Parameter and !name.ok) {
         variable->name.str = "(anonymous)";
-        define_statement->next = parse_comma_define_statement(define_statement, env, end_mask);
-        context.pop_back();
+        define_statement->next = parse_comma_define_statement(define_statement, type_base, env, end_mask);
+        context_pop();
         return define_statement;
     }
 
-    if (env & (Define_Variable | Define_Enum) and scan(Token_Assign).ok) {
+    if (env & (Define_Var | Define_Enum) and scan(Token_Assign).ok) {
         define_statement->expression = parse_expression();
     }
-    if (env & (Define_Variable | Define_Enum)) {
+    if (env & (Define_Var | Define_Enum)) {
         // Scope-wise check of duplicate
         if (context_scope()->object(name.str) != NULL)
             throw errorf("redefinition of '{}'", name, name.str);
@@ -311,15 +330,6 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_E
         // Local-wise check of duplicate
         if (context_scope()->objects.contains(name.str))
             throw errorf("redefinition of '{}'", name, name.str);
-    }
-
-    if (env & Define_Enum) {
-        int64 &constant = variable->enum_constant;
-        if (define_statement->expression != NULL) {
-            variable->enum_constant = parse_constant(name, define_statement->expression);
-        } else {
-            variable->enum_constant = previous != NULL ? previous->variable->enum_constant + 1 : 0;
-        }
     }
 
     Function_Statement *function_statement = (Function_Statement *)context_of(Statement_Function);
@@ -334,33 +344,27 @@ Define_Statement *Parser::parse_define_statement(Type type, Token name, Define_E
         context_scope()->objects.emplace(name.str, define_statement->variable);
     }
 
-    define_statement->next = parse_comma_define_statement(define_statement, env, end_mask);
-    context.pop_back();
+    define_statement->next = parse_comma_define_statement(define_statement, type, env, end_mask);
+    context_pop();
     return define_statement;
 }
 
-Define_Statement *Parser::parse_comma_define_statement(Define_Statement *define_statement, Define_Env mode,
-                                                       int128 end_mask)
+Define_Statement *Parser::parse_comma_define_statement(Define_Statement *define_statement, Type type_base,
+                                                       Define_Env env, int128 end_mask)
 {
     Token comma_or_end = expect(Token_Comma | end_mask, "after define statement");
-    if (comma_or_end.type & end_mask) {
+    if (comma_or_end.type & end_mask)
         return NULL;
-    }
-
-    Type type = (mode & Define_Parameter) ? parse_type() : define_statement->variable->type;
-    Token comma_name = scan(Token_Id);
-    if (!comma_name.ok and mode & Define_Enum)
-        return NULL;
-    return parse_define_statement(type, comma_name, mode, define_statement, end_mask);
+    if (env & Define_Parameter)
+        type_base = parse_type();
+    return (Define_Statement *)parse_define_statement(type_base, env, define_statement, end_mask);
 }
 
-Function_Statement *Parser::parse_function_statement(Type return_type, Token name)
+Function_Statement *Parser::parse_function_statement(Declarator declarator)
 {
-    expect(Token_Paren_Begin, "after function name");
+    Token paren_begin = expect(Token_Paren_Begin, "after function name");
+    auto &[return_type, name, _] = declarator;
 
-    if (!name.ok) {
-        throw errorf("function cannot be anonymous", return_type.token);
-    }
     if (context_scope()->owner != NULL) {
         throw errorf("cannot define function inside scope", name);
     }
@@ -376,26 +380,23 @@ Function_Statement *Parser::parse_function_statement(Type return_type, Token nam
 
     Scope_Statement *scope_statement = ast.push(new Scope_Statement{});
     scope_statement->owner = context_scope();
-    context.push_back(scope_statement);
-
-    Type parameter_type = parse_type();
-    Token parameter_id = scan(Token_Id);
+    context_push(scope_statement);
     function->parameters =
-        parse_define_statement(parameter_type, parameter_id, Define_Parameter, NULL, Token_Paren_End);
+        (Define_Statement *)parse_define_statement(parse_type(), Define_Parameter, NULL, Token_Paren_End);
 
     Function_Statement *function_statement = NULL;
     Token token = expect(Token_Scope_Begin | Token_Semicolon, "after function signature");
     if (token.type & Token_Scope_Begin) {
         function_statement = ast.push(new Function_Statement{});
-        context.push_back(function_statement);
+        context_push(function_statement);
 
         function_statement->function = function;
         function_statement->scope =
             parse_scope_statement(scope_statement, Statement_Kind_Each, Token_Scope_End);
-        context.pop_back();
+        context_pop();
     }
 
-    context.pop_back();
+    context_pop();
     return function_statement;
 }
 
@@ -425,20 +426,29 @@ Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_ty
     Type type = type_system.int_type;
 
     Define_Statement *define_statement =
-        parse_define_statement(type, scan(Token_Id), Define_Enum, NULL, Token_Scope_End);
+        (Define_Statement *)parse_define_statement(type, Define_Enum, NULL, Token_Scope_End);
     context_scope()->body.push_back(define_statement);
 
-    int64 max = 0;
-    for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
-        max = std::max(max, define->variable->enum_constant);
+    int64 enum_max = 0;
+    Define_Statement *it = define_statement, *it_previous = NULL;
+    for (; it != NULL; it_previous = it, it = it->next) {
+        if (define_statement->expression != NULL) {
+            it->variable->enum_constant = parse_constant(it->variable->name, define_statement->expression);
+        } else {
+            it->variable->enum_constant = it_previous != NULL ? it_previous->variable->enum_constant + 1 : 0;
+        }
+
+        enum_max = std::max(enum_max, it->variable->enum_constant);
     }
-    if (max > std::numeric_limits<int32>::max()) {
-        for (Define_Statement *define = define_statement; define != NULL; define = define->next) {
-            define->variable->type.size = 8;
+
+    if (enum_max > INT32_MAX) {
+        it = define_statement;
+        for (; it != NULL; it = it->next) {
+            it->variable->type()->size = 8;
         }
     }
 
-    enum_type = &type;
+    // Todo! set the enum_type, don't rembember why it's there
     return context_scope();
 }
 
@@ -447,14 +457,14 @@ Scope_Statement *Parser::parse_maybe_inlined_scope_statement()
     Scope_Statement *scope_statement = ast.push(new Scope_Statement{});
     bool is_inlined = !scan(Token_Scope_Begin).ok;
     scope_statement->owner = context_scope();
-    context.push_back(scope_statement);
+    context_push(scope_statement);
 
     if (is_inlined) {
         scope_statement->body.push_back(parse_statement());
     } else {
         parse_scope_statement(scope_statement, Statement_Kind_Each, Token_Scope_End);
     }
-    context.pop_back();
+    context_pop();
     return scope_statement;
 }
 
@@ -476,13 +486,13 @@ Condition_Statement *Parser::parse_condition_statement()
     qcc_assert(scan(Token_If | Token_Else).ok, "expected 'if' or 'else' token");
 
     Condition_Statement *condition_statement = ast.push(new Condition_Statement{});
-    context.push_back(condition_statement);
+    context_push(condition_statement);
 
     condition_statement->boolean = parse_boolean_expression();
     condition_statement->statement_if = parse_maybe_inlined_scope_statement();
     if (scan(Token_Else).ok)
         condition_statement->statement_else = parse_maybe_inlined_scope_statement();
-    context.pop_back();
+    context_pop();
     return condition_statement;
 }
 
@@ -491,10 +501,10 @@ While_Statement *Parser::parse_while_statement()
     qcc_assert(scan(Token_While).ok, "expected 'while' token");
 
     While_Statement *while_statement = ast.push(new While_Statement{});
-    context.push_back(while_statement);
+    context_push(while_statement);
     while_statement->boolean = parse_boolean_expression();
     while_statement->statement = parse_maybe_inlined_scope_statement();
-    context.pop_back();
+    context_pop();
     return while_statement;
 }
 
@@ -503,7 +513,7 @@ For_Statement *Parser::parse_for_statement()
     qcc_assert(scan(Token_For).ok, "expected 'for' token");
 
     For_Statement *for_statement = ast.push(new For_Statement{});
-    context.push_back(for_statement);
+    context_push(for_statement);
 
     Token paren_begin = expect(Token_Paren_Begin, "before init expression");
     for_statement->init = parse_expression();
@@ -514,7 +524,7 @@ For_Statement *Parser::parse_for_statement()
     Token paren_end = expect(Token_Paren_Begin, "after loop expression");
     for_statement->statement = parse_maybe_inlined_scope_statement();
 
-    context.pop_back();
+    context_pop();
     return for_statement;
 }
 
@@ -523,7 +533,7 @@ Return_Statement *Parser::parse_return_statement()
 {
     Return_Statement *return_statement = ast.push(new Return_Statement{});
     Function_Statement *function_statement = (Function_Statement *)context_of(Statement_Function);
-    context.push_back(return_statement);
+    context_push(return_statement);
 
     Token keyword = expect(Token_Return, "in return statement");
     if (!function_statement) {
@@ -537,17 +547,17 @@ Return_Statement *Parser::parse_return_statement()
     return_statement->expression = cast_if_needed(keyword, return_statement->expression, return_type);
 
     expect(Token_Semicolon, "after return expression");
-    context.pop_back();
+    context_pop();
     return return_statement;
 }
 
 Expression_Statement *Parser::parse_expression_statement()
 {
     Expression_Statement *statement = ast.push(new Expression_Statement{});
-    context.push_back(statement);
+    context_push(statement);
     statement->expression = parse_expression(statement->expression);
     expect(Token_Semicolon, "after expression statement");
-    context.pop_back();
+    context_pop();
     return statement;
 }
 
@@ -643,6 +653,9 @@ Expression *Parser::parse_expression(Expression *previous, int32 precedence)
         expression = previous != NULL ? (Expression *)parse_invoke_expression(token, previous)
                                       : (Expression *)parse_nested_expression(token);
         break;
+
+    case Token_Crochet_Begin:
+        expression = parse_subscript_expression(token, previous);
 
     default:
         expression = NULL;
@@ -780,24 +793,32 @@ String_Expression *Parser::parse_string_expression(Token token)
 
 // Todo! operator precedence for ++/-- expressions
 // (do not fetch another expression without checking the precedence)
-Expression *Parser::parse_increment_expression(Token operation, Expression *previous, int32 precedence)
+Expression *Parser::parse_increment_expression(Token operation, Expression *operand, int32 precedence)
 {
-    Expression_Order order;
-    Expression *operand;
+    Expression_Order order = operand != NULL ? Expression_Lhs : Expression_Rhs;
+    int32 precedence_now = unary_operator_precedence(operation.type, order);
 
-    if (previous != NULL) {
-        order = Expression_Lhs;
-        operand = previous;
-    } else {
-        order = Expression_Rhs;
-        operand = parse_expression();
+    if (order == Expression_Rhs) {
+        operand = parse_expression(NULL, precedence_now);
     }
+
+    if (precedence_now >= precedence) {
+        operand->endpoint = true;
+        enqueue(operation);
+        return operand;
+    }
+
+    Unary_Expression *unary_expression = ast.push(new Unary_Expression{});
+    unary_expression->operand = operand;
+    unary_expression->operation = operation;
+    unary_expression->order = order;
+    unary_expression->type = type_system.expression_type(operand);
 
     Object *object = ast.decode_designated_expression(operand);
     if (!object or !object->has_assign()) {
-        throw errorf("operand is not assignable", operation);
+        throw errorf("operand is not assignable in '{}' operation", operation, operation.str);
     }
-    return parse_unary_expression(operation, order, operand, precedence);
+    return typecheck_unary_expression(unary_expression);
 }
 
 Expression *Parser::parse_unary_expression(Token operation, Expression_Order order, Expression *operand,
@@ -816,11 +837,17 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
     unary_expression->operation = operation;
     unary_expression->type = type_system.expression_type(operand);
 
+    return typecheck_unary_expression(unary_expression);
+}
+
+Expression *Parser::typecheck_unary_expression(Unary_Expression *unary_expression)
+{
+    Token operation = unary_expression->operation;
+
     if (unary_expression->type->kind & ~Type_Scalar) {
-        throw errorf("cannot use operand on expression of type '{}'", operation,
+        throw errorf("cannot use operand '{}' on expression of type '{}'", operation, operation.str,
                      unary_expression->type->name());
     }
-
     return unary_expression;
 }
 
@@ -841,7 +868,7 @@ Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, in
     binary_expression->operation = operation;
     binary_expression->lhs = lhs;
     binary_expression->rhs = parse_expression(NULL, precedence_now);
-    return binary_expression_typecheck(binary_expression);
+    return typecheck_binary_expression(binary_expression);
 }
 
 Expression *Parser::parse_binary_assign_expression(Token operation, Expression *lhs)
@@ -851,12 +878,12 @@ Expression *Parser::parse_binary_assign_expression(Token operation, Expression *
     binary_expression->operation = operation;
     binary_expression->lhs = lhs;
     binary_expression->rhs = parse_expression(NULL, Lowest_Precedence);
-    binary_expression_typecheck(binary_expression);
+    typecheck_binary_expression(binary_expression);
 
     return parse_assign_expression(operation, lhs, binary_expression);
 }
 
-Expression *Parser::binary_expression_typecheck(Binary_Expression *binary_expression)
+Expression *Parser::typecheck_binary_expression(Binary_Expression *binary_expression)
 {
     Token operation = binary_expression->operation;
     if (!binary_expression->lhs)
@@ -873,10 +900,15 @@ Expression *Parser::binary_expression_typecheck(Binary_Expression *binary_expres
 
     binary_expression->rhs = cast_if_needed(operation, binary_expression->rhs, lhs_type);
 
-    if (operation.type & (Token_Mod | Token_Mask_Bin) and
-        binary_expression->type->kind & (Type_Float | Type_Double)) {
+    if (binary_expression->type->kind & (Type_Float | Type_Double) and
+        operation.type & (Token_Mod | Token_Mask_Bin)) {
         throw errorf("cannot perform binary operation '{}' on floating type '{}'", operation, operation.str,
                      binary_expression->type->name());
+    }
+    if (binary_expression->type->kind & Type_Pointer and
+        operation.type & ~(Token_Add | Token_Sub | Token_Mask_Compare)) {
+        throw errorf("cannot perform arithmetic operation '{}' on pointer type '{}'", operation,
+                     operation.str, binary_expression->type->name());
     }
 
     return binary_expression;
@@ -894,7 +926,7 @@ Argument_Expression *Parser::parse_argument_expression(Token token, Function *fu
                                                        Define_Statement *parameter)
 {
     Argument_Expression *argument_expression = ast.push(new Argument_Expression{});
-    Ref_Expression *ref_expression = parse_ref_expression(parameter->variable, &parameter->variable->type);
+    Ref_Expression *ref_expression = parse_ref_expression(parameter->variable, parameter->variable->type());
     argument_expression->assign_expression =
         parse_assign_expression(token, ref_expression, parse_expression());
 
@@ -933,6 +965,22 @@ Invoke_Expression *Parser::parse_invoke_expression(Token token, Expression *prev
     return invoke_expression;
 }
 
+Subscript_Expression *Parser::parse_subscript_expression(Token token, Expression *operand)
+{
+    Subscript_Expression *subscript_expression = ast.push(new Subscript_Expression{});
+    Object *object = ast.decode_designated_expression(operand);
+
+    if (!object or !(object->type()->kind & (Type_Array | Type_Pointer))) {
+        throw errorf("cannot subscript expresison", token);
+    }
+
+    subscript_expression->operand = operand;
+    subscript_expression->index = parse_expression(NULL, Lowest_Precedence);
+    subscript_expression->type = object->type()->array_type;
+
+    return subscript_expression;
+}
+
 Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs, Expression *rhs)
 {
     Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
@@ -942,10 +990,9 @@ Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs,
         throw errorf("cannot assign expression", token);
     }
 
-    assign_expression->type = object->object_type();
+    assign_expression->type = object->type();
     assign_expression->lhs = lhs;
     assign_expression->rhs = cast_if_needed(token, rhs, assign_expression->type);
-
     return assign_expression;
 }
 
@@ -1007,7 +1054,7 @@ Deref_Expression *Parser::parse_deref_expression(Token token, Expression *operan
     if (deref_expression->type->kind != Type_Pointer) {
         throw errorf("cannot dereference a non-pointer expression", token);
     }
-    
+
     deref_expression->type = deref_expression->type->pointed_type;
     return deref_expression;
 }
@@ -1028,7 +1075,7 @@ Address_Expression *Parser::parse_address_expression(Token token, Expression *op
     address_expression->type = Type{};
     address_expression->type.kind = Type_Pointer;
     address_expression->type.size = 8;
-    address_expression->type.pointed_type = address_expression->object->object_type();
+    address_expression->type.pointed_type = address_expression->object->type();
 
     return address_expression;
 }
@@ -1056,6 +1103,15 @@ Expression *Parser::cast_if_needed(Token token, Expression *expression, Type *ty
     return expression;
 }
 
+bool Parser::token_is_typedef(Token token)
+{
+    if (token.type != Token_Id)
+        return false;
+
+    Typedef *type_def = (Typedef *)context_scope()->object(token.str);
+    return type_def != NULL and type_def->kind() & Object_Typedef;
+}
+
 Scope_Statement *Parser::context_scope()
 {
     return (Scope_Statement *)context_of(Statement_Scope);
@@ -1068,6 +1124,31 @@ Statement *Parser::context_of(uint32 kind)
             return (*it);
     }
     return NULL;
+}
+
+Statement *Parser::context_push(Statement *statement)
+{
+    if (verbose) {
+        std::string_view kind = statement_kind_str(statement->kind());
+        fmt::println(stderr, "{:{}}Context_Push! {}", "", context.size() * 4, kind);
+    }
+
+    context.push_back(statement);
+    return statement;
+}
+
+Statement *Parser::context_pop()
+{
+    qcc_assert(!context.empty(), "context stack is empty");
+
+    Statement *statement = context.back();
+    context.pop_back();
+
+    if (verbose) {
+        std::string_view kind = statement_kind_str(statement->kind());
+        fmt::println(stderr, "{:{}}Context_Pop!  {}", "", (context.size()) * 4, kind);
+    }
+    return statement;
 }
 
 bool Parser::is_eof() const
@@ -1192,7 +1273,9 @@ Token Parser::scan(int128 mask)
 
 Token Parser::enqueue(Token token)
 {
-    return token_queue.emplace_front(token);
+    if (token.ok)
+        token_queue.emplace_front(token);
+    return token;
 }
 
 Token Parser::expect(int128 mask, std::string_view context)

@@ -24,7 +24,7 @@ struct Object
 
     virtual ~Object() = default;
     virtual Object_Kind kind() const = 0;
-    virtual Type *object_type() = 0;
+    virtual Type *type() = 0;
 
     virtual Source *source() const
     {
@@ -56,9 +56,9 @@ struct Function : Object
         return Object_Function;
     }
 
-    Type *object_type() override
+    Type *type() override
     {
-	qcc_todo("type function objects");
+        qcc_todo("type function objects");
         return NULL;
     }
 
@@ -70,25 +70,26 @@ struct Function : Object
 
 enum Define_Env : uint32
 {
+    Define_Unknown = Bit(uint32, 0),
     Define_Struct = Bit(uint32, 1),
     Define_Union = Bit(uint32, 2),
     Define_Enum = Bit(uint32, 3),
     Define_Parameter = Bit(uint32, 4),
-    Define_Variable = Bit(uint32, 5),
+    Define_Var = Bit(uint32, 5),
 };
 
-constexpr std::string_view define_mode_str(uint32 define_mode)
+constexpr std::string_view define_env_str(uint32 env)
 {
-    switch (define_mode) {
+    switch (env) {
     case Define_Struct:
-        return "struct";
+        return "struct-member";
     case Define_Union:
-        return "union";
+        return "union-member";
     case Define_Enum:
-        return "enum";
+        return "enum-member";
     case Define_Parameter:
         return "parameter";
-    case Define_Variable:
+    case Define_Var:
         return "variable";
     default:
         return "?";
@@ -97,15 +98,15 @@ constexpr std::string_view define_mode_str(uint32 define_mode)
 
 struct Variable : Object, Source
 {
-    Type type;
+    Type var_type;
     uint32 env;
 
     union {
-	int64 enum_constant;
-	int64 struct_offset;
-	int64 meta;
+        int64 enum_constant;
+        int64 struct_offset;
+        int64 meta;
     };
-    
+
     Source *source() const override
     {
         return (Source *)this;
@@ -116,57 +117,57 @@ struct Variable : Object, Source
         return Object_Variable;
     }
 
-    Type *object_type() override
+    Type *type() override
     {
-        return &type;
+        return &var_type;
     }
 
     bool has_assign() const override
     {
-        return !(type.cvr & Type_Const);
+        return !(var_type.cvr & Type_Const);
     }
 
     bool has_address() const override
     {
-        return type.storage != Type_Register;
+        return var_type.storage != Type_Register;
     }
 };
 
 struct Typedef : Object
 {
-    Type type;
+    Type typedef_type;
 
     Object_Kind kind() const override
     {
         return Object_Typedef;
     }
 
-    Type *object_type() override
+    Type *type() override
     {
-        return &type;
+        return &typedef_type;
     }
 };
 
 struct Record : Object
 {
-    Type type;
+    Type record_type;
 
     Object_Kind kind() const override
     {
         return Object_Record;
     }
 
-    Type *object_type() override
+    Type *type() override
     {
-        return &type;
+        return &record_type;
     }
 };
 
 struct String : Object, Source
 {
     std::string data;
-    Type type;
-    
+    Type string_type;
+
     Source *source() const override
     {
         return (Source *)this;
@@ -177,9 +178,9 @@ struct String : Object, Source
         return Object_Variable;
     }
 
-    Type *object_type() override
+    Type *type() override
     {
-        return &type;
+        return &string_type;
     }
 
     bool has_address() const override

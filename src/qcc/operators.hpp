@@ -1,5 +1,5 @@
-#ifndef QCC_PRECEDENCE_HPP
-#define QCC_PRECEDENCE_HPP
+#ifndef QCC_OPERATORS_HPP
+#define QCC_OPERATORS_HPP
 
 #include "fwd.hpp"
 #include "scan/token.hpp"

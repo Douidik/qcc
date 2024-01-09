@@ -42,7 +42,7 @@ struct Cast_Expression;
 struct Dot_Expression;
 struct Deref_Expression;
 struct Address_Expression;
-// struct Move_Expression;
+struct Subscript_Expression;
 struct Ref_Expression;
 
 enum Object_Kind : uint32;

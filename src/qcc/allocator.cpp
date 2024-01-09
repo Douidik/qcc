@@ -60,7 +60,7 @@ void Allocator::allocate()
 
 int64 Allocator::create_function_stack_push(Variable *variable, int64 offset, int64 alignment)
 {
-    int64 size = variable->type.size;
+    int64 size = variable->type()->size;
     int64 address = Round_Up(offset, alignment);
 
     if (variable->env & Define_Parameter) {
@@ -114,7 +114,7 @@ void Allocator::create_function_stack(Function_Statement *function_statement)
 
     offset = 0, alignment = 0;
     for (Variable *variable : function->locals | views::filter(on_stack)) {
-        alignment = std::max(alignment, variable->type.alignment());
+        alignment = std::max(alignment, variable->type()->alignment());
     }
     for (Variable *variable : function->locals | views::filter(on_stack)) {
         offset += create_function_stack_push(variable, offset, alignment);
@@ -128,15 +128,15 @@ void Allocator::parse_begin_of_use(Variable *variable)
         return;
     }
 
-    else if (variable->type.kind & (Type_Struct | Type_Union) or variable->env & Define_Parameter) {
+    else if (variable->type()->kind & (Type_Struct | Type_Union) or variable->env & Define_Parameter) {
         variable->location = Source_Stack;
     }
 
-    else if (variable->type.kind & Type_Gpr and gpr_count != 0) {
+    else if (variable->type()->kind & Type_Gpr and gpr_count != 0) {
         variable->location = Source_Gpr, variable->gpr = gpr_count--;
     }
 
-    else if (variable->type.kind & Type_Fpr and fpr_count != 0) {
+    else if (variable->type()->kind & Type_Fpr and fpr_count != 0) {
         variable->location = Source_Fpr, variable->fpr = fpr_count--;
     }
 
@@ -157,7 +157,7 @@ void Allocator::parse_end_of_use(Variable *variable)
 
 void Allocator::parse_new_use(Variable *variable)
 {
-    if (variable->type.kind & Type_Void)
+    if (variable->type()->kind & Type_Void)
         return;
 
     if (uses_range.contains(variable)) {
@@ -192,7 +192,7 @@ void Allocator::parse_statement_use_ranges(Statement *statement)
             parse_statement_use_ranges(function->parameters);
         }
         if (function_statement->scope != NULL) {
-	    parse_statement_use_ranges(function_statement->scope);
+            parse_statement_use_ranges(function_statement->scope);
         }
         break;
     }
@@ -266,7 +266,7 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Argument: {
         Argument_Expression *argument_expression = (Argument_Expression *)expression;
-	Assign_Expression *assign_expression = argument_expression->assign_expression;
+        Assign_Expression *assign_expression = argument_expression->assign_expression;
         parse_expression_use_ranges(assign_expression->rhs);
         if (argument_expression->next != NULL)
             parse_expression_use_ranges(argument_expression->next);
@@ -275,8 +275,8 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Invoke: {
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
-	if (invoke_expression->arguments != NULL)
-	    parse_expression_use_ranges(invoke_expression->arguments);
+        if (invoke_expression->arguments != NULL)
+            parse_expression_use_ranges(invoke_expression->arguments);
         invoke_expression->use_time = std::max((int64)uses_timeline.size() - 1, 0L);
         break;
     }

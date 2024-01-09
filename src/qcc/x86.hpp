@@ -27,6 +27,7 @@ struct X86 : Asm
     void emit_ref_expression(Ref_Expression *ref_expression, Register regs);
     void emit_binary_expression(Binary_Expression *binary_expression, Register regs);
     void emit_unary_expression(Unary_Expression *unary_expression, Register regs);
+    void emit_increment_expression(Unary_Expression *unary_expression, Register regs);
     void emit_invoke_expression(Invoke_Expression *invoke_expression, Register regs);
     void emit_nested_expression(Nested_Expression *nested_expression, Register regs);
     void emit_assign_expression(Assign_Expression *assign_expression, Register regs,
