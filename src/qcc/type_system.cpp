@@ -1,5 +1,4 @@
 #include "type_system.hpp"
-#include "ast.hpp"
 #include "expression.hpp"
 #include "object.hpp"
 #include "statement.hpp"
@@ -12,7 +11,16 @@ namespace qcc
 
 std::string Type::name()
 {
-    if (token.ok) {
+    if (kind & Type_Pointer) {
+        return fmt::format("{}*", pointed_type->name());
+    }
+    if (kind & Type_Array) {
+        if (size != -1)
+            return fmt::format("{}[{}]", array_type->name(), size / array_type->size);
+        else
+            return fmt::format("{}[]", array_type->name());
+    }
+    if (!token.str.empty()) {
         return std::string(token.str);
     }
 
@@ -77,15 +85,15 @@ Type *Type_System::expression_type(Expression *expression)
 {
     switch (expression->kind()) {
     case Expression_Unary:
-        return ((Unary_Expression *)expression)->type;
+        return &((Unary_Expression *)expression)->type;
     case Expression_Binary:
-        return ((Binary_Expression *)expression)->type;
-    case Expression_Cast:
-        return ((Cast_Expression *)expression)->into;
+        return &((Binary_Expression *)expression)->type;
     case Expression_Ref:
         return ((Ref_Expression *)expression)->type;
     case Expression_Assign:
         return ((Assign_Expression *)expression)->type;
+    case Expression_Cast:
+        return &((Cast_Expression *)expression)->into;
     case Expression_Invoke:
         return &((Invoke_Expression *)expression)->function->return_type;
     case Expression_Ternary:
@@ -98,8 +106,6 @@ Type *Type_System::expression_type(Expression *expression)
         return &((Address_Expression *)expression)->type;
     case Expression_Deref:
         return ((Deref_Expression *)expression)->type;
-    case Expression_Subscript:
-        return ((Subscript_Expression *)expression)->type;
     case Expression_Id: {
         Id_Expression *id_expression = (Id_Expression *)expression;
         return id_expression->object->type();
@@ -163,13 +169,19 @@ uint32 Type_System::cast(Type *from, Type *into)
         return Type_Cast_Same;
     }
 
+    case Type_Array: {
+        return cast(from->array_type, into->array_type);
+    }
     default:
         break;
     }
 
-    if (kinds & (Type_Scalar)) {
-        uint32 cast = Type_Cast_Same;
+    if (from->kind & Type_Array and into->kind & Type_Pointer) {
+        return Type_Cast_Decay | cast(from->array_type, into->array_type);
+    }
 
+    if (kinds & Type_Scalar) {
+        uint32 cast = Type_Cast_Same;
         if ((kinds & Type_Float) and (kinds & Type_Int))
             cast |= Type_Cast_Inferred;
         if ((kinds & Type_Float) and (kinds & Type_Pointer))
@@ -228,61 +240,5 @@ Type *Type_System::orphan_type_push(Type *type)
 {
     return orphan_types.emplace_back(type);
 }
-
-// Type Type_System::clone_type(Ast &ast, Type *type)
-// {
-//     Type clone = {};
-//     clone.token = type->token;
-//     clone.size = type->size;
-//     clone.kind = type->kind;
-//     clone.mods = type->mods;
-//     clone.cvr = type->cvr;
-//     clone.storage = type->storage;
-
-//     switch (type->kind) {
-//     case Type_Pointer: {
-//         Type *pointed_type = new Type{clone_type(ast, type->pointed_type)};
-//         clone.pointed_type = orphan_type_push(pointed_type);
-//         break;
-//     }
-
-//     case Type_Struct:
-//     case Type_Union: {
-//         Struct_Statement *struct_statement = ast.push(new Struct_Statement{});
-//         struct_statement->keyword = type->struct_statement->keyword;
-//         struct_statement->hash = type->struct_statement->hash;
-
-//         for (auto &[name, variable] : type->struct_statement->members) {
-//             struct_statement->members[name] = ast.push(new Variable{});
-//             // struct_statement->members[name]->type = clone_type(ast, &variable->type);
-
-//             struct_statement->members[name]->name = variable->name;
-//             struct_statement->members[name]->mode = variable->mode;
-//             struct_statement->members[name]->meta = variable->meta;
-//         }
-//         clone.struct_statement = struct_statement;
-//         break;
-//     }
-
-//     case Type_Enum: {
-//         clone.enum_type = type->enum_type;
-//         break;
-//     }
-
-//     case Type_Array: {
-//         clone.array_type = type->array_type;
-//         break;
-//     }
-
-//     case Type_Function_Pointer: {
-//         qcc_assert("Todo! clone_type() for function pointers", 0);
-//     }
-
-//     default:
-//         break; // no metadata
-//     }
-
-//     return clone;
-// }
 
 } // namespace qcc

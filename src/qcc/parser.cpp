@@ -162,7 +162,8 @@ Declarator Parser::parse_declarator(Type type_base, Define_Env env)
 
 Type Parser::parse_pointer_declarator(Type pointed_type)
 {
-    if (!scan(Token_Star).ok) {
+    Token star = scan(Token_Star);
+    if (!star.ok) {
         return pointed_type;
     }
     Type type = {};
@@ -288,13 +289,12 @@ Statement *Parser::parse_define_statement(Type type_base, Define_Env env, Define
         return NULL;
 
     Declarator declarator = parse_declarator(type_base, env);
+    auto &[type, name, _] = declarator;
+
     if (declarator.has_matched_function)
         return parse_function_statement(declarator);
     if (env & Define_Unknown)
         env = Define_Var;
-
-    Define_Statement *define_statement = ast.push(new Define_Statement{});
-    auto &[type, name, _] = declarator;
 
     if (type.kind & Type_Void) {
         if (env & Define_Parameter) {
@@ -303,6 +303,8 @@ Statement *Parser::parse_define_statement(Type type_base, Define_Env env, Define
         }
         throw errorf("cannot define {} as void", type.token | name, define_env_str(env));
     }
+
+    Define_Statement *define_statement = ast.push(new Define_Statement{});
 
     Variable *variable = ast.push(new Variable{});
     define_statement->variable = variable;
@@ -470,15 +472,10 @@ Scope_Statement *Parser::parse_maybe_inlined_scope_statement()
 
 Expression *Parser::parse_boolean_expression()
 {
-    Token paren_begin = expect(Token_Paren_Begin, "before nested boolean expression");
-    Expression *boolean_expression = parse_expression();
-    Token paren_end = expect(Token_Paren_End, "after nested boolean expression");
-
-    Type *type = type_system.expression_type(boolean_expression);
-    if (type->kind & ~Type_Scalar) {
-        throw errorf("expression must reduce to a scalar", paren_begin | paren_end);
-    }
-    return boolean_expression;
+    Token paren_begin = expect(Token_Paren_Begin, "in boolean expression");
+    Expression *expression = parse_expression();
+    Token paren_end = expect(Token_Paren_End, "in boolean expression");
+    return cast_if_needed(paren_begin | paren_end, expression, type_system.bool_type);
 }
 
 Condition_Statement *Parser::parse_condition_statement()
@@ -519,6 +516,7 @@ For_Statement *Parser::parse_for_statement()
     for_statement->init = parse_expression();
     Token semicolon_init = expect(Token_Paren_Begin, "after init expression");
     for_statement->boolean = parse_expression();
+    for_statement->boolean = cast_if_needed(semicolon_init, for_statement->boolean, type_system.bool_type);
     Token semicolon_boolean = expect(Token_Paren_Begin, "after boolean expression");
     for_statement->loop = parse_expression();
     Token paren_end = expect(Token_Paren_Begin, "after loop expression");
@@ -544,7 +542,7 @@ Return_Statement *Parser::parse_return_statement()
     return_statement->expression = parse_expression();
 
     Type *return_type = &return_statement->function->return_type;
-    return_statement->expression = cast_if_needed(keyword, return_statement->expression, return_type);
+    return_statement->expression = cast_if_needed(keyword, return_statement->expression, *return_type);
 
     expect(Token_Semicolon, "after return expression");
     context_pop();
@@ -656,6 +654,7 @@ Expression *Parser::parse_expression(Expression *previous, int32 precedence)
 
     case Token_Crochet_Begin:
         expression = parse_subscript_expression(token, previous);
+        break;
 
     default:
         expression = NULL;
@@ -809,16 +808,15 @@ Expression *Parser::parse_increment_expression(Token operation, Expression *oper
     }
 
     Unary_Expression *unary_expression = ast.push(new Unary_Expression{});
-    unary_expression->operand = operand;
+    unary_expression->operand = typecheck_unary_operand(operand, operation);
     unary_expression->operation = operation;
     unary_expression->order = order;
-    unary_expression->type = type_system.expression_type(operand);
+    unary_expression->type = *type_system.expression_type(operand);
 
-    Object *object = ast.decode_designated_expression(operand);
-    if (!object or !object->has_assign()) {
+    if (categorize_expression(operand) != Expression_L) {
         throw errorf("operand is not assignable in '{}' operation", operation, operation.str);
     }
-    return typecheck_unary_expression(unary_expression);
+    return unary_expression;
 }
 
 Expression *Parser::parse_unary_expression(Token operation, Expression_Order order, Expression *operand,
@@ -833,22 +831,29 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
 
     Unary_Expression *unary_expression = ast.push(new Unary_Expression{});
     unary_expression->order = order;
-    unary_expression->operand = operand;
+    unary_expression->operand = typecheck_unary_operand(operand, operation);
     unary_expression->operation = operation;
-    unary_expression->type = type_system.expression_type(operand);
 
-    return typecheck_unary_expression(unary_expression);
-}
-
-Expression *Parser::typecheck_unary_expression(Unary_Expression *unary_expression)
-{
-    Token operation = unary_expression->operation;
-
-    if (unary_expression->type->kind & ~Type_Scalar) {
-        throw errorf("cannot use operand '{}' on expression of type '{}'", operation, operation.str,
-                     unary_expression->type->name());
+    if (operation.type & Token_Mask_Boolean) {
+        unary_expression->type = type_system.bool_type;
+    } else {
+        unary_expression->type = *type_system.expression_type(operand);
     }
     return unary_expression;
+}
+
+Expression *Parser::typecheck_unary_operand(Expression *operand, Token operation)
+{
+    Type *type = type_system.expression_type(operand);
+
+    if (type->kind & Type_Array) {
+        operand = cast_array_decay(operation, operand);
+        return typecheck_unary_operand(operand, operation);
+    }
+    if (!(type->kind & Type_Scalar)) {
+        throw errorf("cannot perform '{}' on type '{}'", operation, operation.str, type->name());
+    }
+    return operand;
 }
 
 Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, int32 precedence)
@@ -883,34 +888,36 @@ Expression *Parser::parse_binary_assign_expression(Token operation, Expression *
     return parse_assign_expression(operation, lhs, binary_expression);
 }
 
+Expression *Parser::typecheck_binary_operand(Expression *operand, Token operation)
+{
+    Type *type = type_system.expression_type(operand);
+
+    if (type->kind & Type_Array) {
+        operand = cast_array_decay(operation, operand);
+        return typecheck_binary_operand(operand, operation);
+    }
+    if (!(type->kind & Type_Scalar)) {
+        throw errorf("cannot perform '{}' on type '{}'", operation, operation.str, type->name());
+    }
+    if (type->kind & Type_Real and operation.type & (Token_Mod | Token_Mask_Bitwise)) {
+        throw errorf("cannot perform '{}' on real type '{}'", operation, operation.str, type->name());
+    }
+    if (type->kind & Type_Pointer and operation.type & ~(Token_Add | Token_Sub | Token_Mask_Compare)) {
+        throw errorf("cannot perform '{}' on pointer type '{}'", operation, operation.str, type->name());
+    }
+    return operand;
+}
+
 Expression *Parser::typecheck_binary_expression(Binary_Expression *binary_expression)
 {
-    Token operation = binary_expression->operation;
-    if (!binary_expression->lhs)
-        throw errorf("missing left-hand side expression in binary expression", operation);
+    binary_expression->lhs = typecheck_binary_operand(binary_expression->lhs, binary_expression->operation);
+    binary_expression->rhs = typecheck_binary_operand(binary_expression->rhs, binary_expression->operation);
 
-    Type *lhs_type = type_system.expression_type(binary_expression->lhs);
-    Type *rhs_type = type_system.expression_type(binary_expression->rhs);
-    binary_expression->type = lhs_type;
-
-    if (lhs_type->kind & ~Type_Scalar)
-        throw errorf("left-hand side expression is not a scalar", operation);
-    if (rhs_type->kind & ~Type_Scalar)
-        throw errorf("right-hand side expression is not a scalar", operation);
-
-    binary_expression->rhs = cast_if_needed(operation, binary_expression->rhs, lhs_type);
-
-    if (binary_expression->type->kind & (Type_Float | Type_Double) and
-        operation.type & (Token_Mod | Token_Mask_Bin)) {
-        throw errorf("cannot perform binary operation '{}' on floating type '{}'", operation, operation.str,
-                     binary_expression->type->name());
+    if (binary_expression->operation.type & Token_Mask_Boolean) {
+        binary_expression->type = type_system.bool_type;
+    } else {
+        binary_expression->type = *type_system.expression_type(binary_expression->lhs);
     }
-    if (binary_expression->type->kind & Type_Pointer and
-        operation.type & ~(Token_Add | Token_Sub | Token_Mask_Compare)) {
-        throw errorf("cannot perform arithmetic operation '{}' on pointer type '{}'", operation,
-                     operation.str, binary_expression->type->name());
-    }
-
     return binary_expression;
 }
 
@@ -965,48 +972,46 @@ Invoke_Expression *Parser::parse_invoke_expression(Token token, Expression *prev
     return invoke_expression;
 }
 
-Subscript_Expression *Parser::parse_subscript_expression(Token token, Expression *operand)
+Expression *Parser::parse_subscript_expression(Token token, Expression *operand)
 {
-    Subscript_Expression *subscript_expression = ast.push(new Subscript_Expression{});
-    Object *object = ast.decode_designated_expression(operand);
+    // Convert (x[y]) into *((x) + z)), where z = y * sizeof(x[0])
+    // z is implicit due to the compiler producing the pointer arithmetic
+    Binary_Expression *binary_expression = ast.push(new Binary_Expression{});
+    binary_expression->lhs = operand;
+    binary_expression->rhs = parse_expression(NULL, Lowest_Precedence);
+    binary_expression->operation = token | expect(Token_Crochet_End, "in subscript expression");
+    binary_expression->operation.type = Token_Add;
+    // Todo! does the typecheck got the subscription type right ?
+    // binary_expression->type = type_system.expression_type(operand);
+    typecheck_binary_expression(binary_expression);
 
-    if (!object or !(object->type()->kind & (Type_Array | Type_Pointer))) {
-        throw errorf("cannot subscript expresison", token);
-    }
-
-    subscript_expression->operand = operand;
-    subscript_expression->index = parse_expression(NULL, Lowest_Precedence);
-    subscript_expression->type = object->type()->array_type;
-
-    return subscript_expression;
+    return parse_deref_expression(token, binary_expression);
 }
 
 Assign_Expression *Parser::parse_assign_expression(Token token, Expression *lhs, Expression *rhs)
 {
     Assign_Expression *assign_expression = ast.push(new Assign_Expression{});
-    Object *object = ast.decode_designated_expression(lhs);
+    assign_expression->lhs = lhs;
+    assign_expression->type = type_system.expression_type(lhs);
+    assign_expression->rhs = cast_if_needed(token, rhs, *assign_expression->type);
 
-    if (!object or object->kind() != Object_Variable or !object->has_assign()) {
-        throw errorf("cannot assign expression", token);
+    Object *object = ast.decode_designated_expression(lhs);
+    if (object != NULL and !object->has_assign()) {
+        throw errorf("expression is not assignable", token);
     }
 
-    assign_expression->type = object->type();
-    assign_expression->lhs = lhs;
-    assign_expression->rhs = cast_if_needed(token, rhs, assign_expression->type);
     return assign_expression;
 }
 
-Cast_Expression *Parser::parse_cast_expression(Token token, Expression *expression, Type *type)
+Cast_Expression *Parser::parse_cast_expression(Token token, Expression *expression, Type type)
 {
     Cast_Expression *cast_expression = ast.push(new Cast_Expression{});
-    cast_expression->expression = expression;
+    cast_expression->operand = expression;
     cast_expression->from = type_system.expression_type(expression);
     cast_expression->into = type;
 
-    if (!cast_expression->expression)
+    if (!cast_expression->operand)
         throw errorf("missing expression for type cast expression", token);
-    if (!cast_expression->into)
-        throw errorf("missing type for type cast expression", token);
     return cast_expression;
 }
 
@@ -1014,11 +1019,11 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
 {
     Dot_Expression *dot_expression = ast.push(new Dot_Expression{});
 
-    dot_expression->expression = previous;
-    if (!dot_expression->expression) {
+    dot_expression->operand = previous;
+    if (!dot_expression->operand) {
         throw errorf("variable expected for member access", token);
     }
-    Type *type = type_system.expression_type(dot_expression->expression);
+    Type *type = type_system.expression_type(dot_expression->operand);
     if (type->kind & ~(Type_Struct | Type_Union)) {
         throw errorf("struct or union expected for member access ", token, token.str);
     }
@@ -1038,9 +1043,9 @@ Dot_Expression *Parser::parse_dot_expression(Token token, Expression *previous)
     return dot_expression;
 }
 
-Dot_Expression *Parser::parse_arrow_expression(Token token, Expression *previous)
+Dot_Expression *Parser::parse_arrow_expression(Token token, Expression *operand)
 {
-    Deref_Expression *deref_expression = parse_deref_expression(token, previous);
+    Deref_Expression *deref_expression = parse_deref_expression(token, operand);
     Dot_Expression *dot_expression = parse_dot_expression(token, deref_expression);
     return dot_expression;
 }
@@ -1051,8 +1056,8 @@ Deref_Expression *Parser::parse_deref_expression(Token token, Expression *operan
     deref_expression->operand = operand;
     deref_expression->type = type_system.expression_type(operand);
 
-    if (deref_expression->type->kind != Type_Pointer) {
-        throw errorf("cannot dereference a non-pointer expression", token);
+    if (!(deref_expression->type->kind & (Type_Pointer | Type_Array))) {
+        throw errorf("'*' operand cannot be dereferenced", token);
     }
 
     deref_expression->type = deref_expression->type->pointed_type;
@@ -1062,20 +1067,22 @@ Deref_Expression *Parser::parse_deref_expression(Token token, Expression *operan
 Address_Expression *Parser::parse_address_expression(Token token, Expression *operand)
 {
     Address_Expression *address_expression = ast.push(new Address_Expression);
-    address_expression->object = ast.decode_designated_expression(operand);
-    if (!address_expression->object) {
-        throw errorf("address-to operand does not designate an object", token);
+    Type *operand_type = type_system.expression_type(operand);
+    Expression_Category category = categorize_expression(operand);
+    Object *object = ast.decode_designated_expression(operand);
+
+    if (category != Expression_L) {
+        throw errorf("'&' operand cannot be addressed", token);
     }
-    if (address_expression->object->kind() & Object_Variable) {
-        // Once the variable has been explicitly addressed it must have an address
-        Variable *variable = (Variable *)address_expression->object;
+    if (object and object->kind() & Object_Variable) {
+        Variable *variable = (Variable *)object;
         variable->location = Source_Stack;
     }
-
+    address_expression->operand = operand;
     address_expression->type = Type{};
     address_expression->type.kind = Type_Pointer;
     address_expression->type.size = 8;
-    address_expression->type.pointed_type = address_expression->object->type();
+    address_expression->type.pointed_type = operand_type;
 
     return address_expression;
 }
@@ -1089,13 +1096,25 @@ Ref_Expression *Parser::parse_ref_expression(Object *object, Type *type)
     return ref_expression;
 }
 
-Expression *Parser::cast_if_needed(Token token, Expression *expression, Type *type)
+Cast_Expression *Parser::cast_array_decay(Token token, Expression *expression)
+{
+    Type *array_type = type_system.expression_type(expression);
+    qcc_assert(array_type->kind & Type_Array, "cannot decay a non-array type");
+
+    Type decay_type = {};
+    type_system.merge_type(&decay_type, array_type);
+    decay_type.kind = Type_Pointer;
+    decay_type.size = 8;
+    return parse_cast_expression(token, expression, decay_type);
+}
+
+Expression *Parser::cast_if_needed(Token token, Expression *expression, Type type)
 {
     Type *expression_type = type_system.expression_type(expression);
-    uint32 type_cast = type_system.cast(expression_type, type);
+    uint32 type_cast = type_system.cast(expression_type, &type);
 
     if (type_cast & Type_Cast_Error) {
-        throw errorf("cannot cast type '{}' into '{}'", token, expression_type->name(), type->name());
+        throw errorf("cannot cast type '{}' into '{}'", token, expression_type->name(), type.name());
     }
     if (type_cast > Type_Cast_Same) {
         return parse_cast_expression(token, expression, type);
@@ -1110,6 +1129,63 @@ bool Parser::token_is_typedef(Token token)
 
     Typedef *type_def = (Typedef *)context_scope()->object(token.str);
     return type_def != NULL and type_def->kind() & Object_Typedef;
+}
+
+Expression_Category Parser::categorize_expression(Expression *expression)
+{
+    switch (expression->kind()) {
+    case Expression_Id: {
+        Id_Expression *id_expression = (Id_Expression *)expression;
+        return Expression_L;
+    }
+
+    case Expression_Ref: {
+        Ref_Expression *ref_expression = (Ref_Expression *)expression;
+        return Expression_L;
+    }
+
+    case Expression_Address: {
+        Address_Expression *address_expression = (Address_Expression *)expression;
+        return Expression_L;
+    }
+
+    case Expression_Deref: {
+        Deref_Expression *deref_expression = (Deref_Expression *)expression;
+        return categorize_expression(deref_expression->operand);
+    }
+
+    case Expression_Dot: {
+        Dot_Expression *dot_expression = (Dot_Expression *)expression;
+        return Expression_L;
+    }
+
+    case Expression_Unary: {
+        Unary_Expression *unary_expression = (Unary_Expression *)expression;
+        if (unary_expression->operation.type & (Token_Increment | Token_Decrement))
+            return Expression_L;
+        return Expression_R;
+    }
+
+    case Expression_Binary: {
+        Binary_Expression *binary_expression = (Binary_Expression *)expression;
+        if (binary_expression->type.kind & (Type_Pointer | Type_Array))
+            return Expression_L;
+        return Expression_R;
+    }
+
+    case Expression_Assign: {
+        Assign_Expression *assign_expression = (Assign_Expression *)expression;
+        return categorize_expression(assign_expression->lhs);
+    }
+
+    case Expression_Nested: {
+        Nested_Expression *nested_expression = (Nested_Expression *)expression;
+        return categorize_expression(nested_expression->operand);
+    }
+
+    default:
+        return Expression_R;
+    }
 }
 
 Scope_Statement *Parser::context_scope()
@@ -1139,7 +1215,7 @@ Statement *Parser::context_push(Statement *statement)
 
 Statement *Parser::context_pop()
 {
-    qcc_assert(!context.empty(), "context stack is empty");
+    qcc_assert(!context.empty(), "cannot pop context, stack is empty");
 
     Statement *statement = context.back();
     context.pop_back();

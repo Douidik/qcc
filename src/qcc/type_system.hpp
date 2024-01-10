@@ -12,13 +12,14 @@ namespace qcc
 enum Type_Cast : uint32
 {
     Type_Cast_Same = Bit(uint32, 0),
-    Type_Cast_Inferred = Bit(uint32, 1),
-    Type_Cast_Narrowed = Bit(uint32, 2),
-    Type_Cast_Transmuted = Bit(uint32, 3),
-    Type_Cast_Error = Bit(uint32, 4),
+    Type_Cast_Decay = Bit(uint32, 1),
+    Type_Cast_Inferred = Bit(uint32, 2),
+    Type_Cast_Narrowed = Bit(uint32, 3),
+    Type_Cast_Transmuted = Bit(uint32, 4),
+    Type_Cast_Error = Bit(uint32, 5),
 };
 
-enum Type_Kind : uint32
+enum Type_Kind : uint16
 {
     Type_Undefined = 0,
     Type_Char = Bit(uint32, 0),
@@ -35,10 +36,11 @@ enum Type_Kind : uint32
     Type_Kind_Each = Bit(uint32, 11) - 1,
     Type_Scalar =
         (Type_Char | Type_Int | Type_Float | Type_Double | Type_Pointer | Type_Enum | Type_Function_Pointer),
+    Type_Real = (Type_Double | Type_Float),
     Type_Record = (Type_Struct | Type_Union | Type_Enum),
     Type_Aggregate = (Type_Struct | Type_Union | Type_Array),
-    Type_Gpr = (Type_Char | Type_Int | Type_Pointer | Type_Enum),
-    Type_Fpr = (Type_Double | Type_Float),
+    Type_Gpr = (Type_Char | Type_Int | Type_Pointer | Type_Enum | Type_Array),
+    Type_Fpr = (Type_Real),
 };
 
 constexpr std::string_view type_kind_name(Type_Kind kind)
@@ -95,7 +97,7 @@ constexpr Type_Kind token_to_type_kind(Token_Type type)
     }
 }
 
-enum Type_Mod : uint32
+enum Type_Mod : uint8
 {
     Type_Signed = Bit(uint32, 0),
     Type_Unsigned = Bit(uint32, 1),
@@ -174,7 +176,7 @@ struct Type
     Token token;
     size_t size;
     Type_Kind kind;
-    uint32 mods;
+    uint8 mods;
     uint32 cvr;
     Type_Storage storage;
 
@@ -196,13 +198,13 @@ struct Type_System
 {
     const Type void_type = {{}, 0, Type_Void};
     const Type int_type = {{}, 4, Type_Int, Type_Signed};
+    const Type bool_type = int_type;
     const Type char_type = {{}, 1, Type_Char, 0};
     const Type float_type = {{}, 4, Type_Float};
     const Type double_type = {{}, 8, Type_Double};
     std::vector<Type *> orphan_types;
 
     ~Type_System();
-    Type *find_fundamental_type(Type_Kind kind, uint32 mods);
     Type *expression_type(Expression *expression);
     int32 expression_precedence(Expression *expression);
     uint32 cast(Type *from, Type *into);

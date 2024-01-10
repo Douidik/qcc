@@ -32,7 +32,7 @@ Object *Ast::decode_designated_expression(Expression *expression)
 
     case Expression_Address: {
         Address_Expression *address_expression = (Address_Expression *)expression;
-        return address_expression->object;
+        return decode_designated_expression(address_expression->operand);
     }
 
     case Expression_Deref: {
@@ -62,7 +62,6 @@ Object *Ast::decode_designated_expression(Expression *expression)
     }
 
     default:
-        qcc_assert(0, "expression is not designated");
         return NULL;
     }
 }
@@ -84,11 +83,15 @@ void Ast::dump_statement(std::ostream &stream, Statement *statement, int32 inden
         for (Record *record : views::values(scope_statement->records))
             dump_object(stream, record, indent + 1);
 
-        Ws, fmt::println(stream, "*Scope: ");
-        for (Statement *in_statement : scope_statement->body) {
-            Ws, fmt::println(stream, "~");
-            dump_statement(stream, in_statement, indent + 1);
+        Ws, fmt::println(stream, "*Scope: {{");
+        for (int64 i = 0; i < scope_statement->body.size(); i++) {
+            dump_statement(stream, scope_statement->body[i], indent + 1);
+            if (i < scope_statement->body.size() - 1) {
+                Ws, fmt::println(stream, "~");
+            }
         }
+
+        Ws, fmt::println(stream, "}}");
 
         return;
     }
@@ -300,11 +303,11 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
         Cast_Expression *cast_expression = (Cast_Expression *)expression;
         Ws, fmt::print(stream, "Cast_Expression (");
         fmt::print(stream, "from: {}, ", cast_expression->from->name());
-        fmt::print(stream, "into: {}, ", cast_expression->into->name());
+        fmt::print(stream, "into: {}", cast_expression->into.name());
         fmt::println(stream, "): ");
 
-        fmt::println(stream, "*Expression: ");
-        dump_expression(stream, cast_expression->expression, indent + 1);
+        Ws, fmt::println(stream, "*Expression: ");
+        dump_expression(stream, cast_expression->operand, indent + 1);
         return;
     }
 
@@ -312,8 +315,8 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
         Ws, fmt::println(stream, "Dot_Expression: ");
 
-        Ws, fmt::println(stream, "*Expression: ");
-        dump_expression(stream, dot_expression->expression, indent + 1);
+        Ws, fmt::println(stream, "*Operand: ");
+        dump_expression(stream, dot_expression->operand, indent + 1);
         Ws, fmt::println(stream, "*Member: ");
         dump_object(stream, dot_expression->member, indent + 1);
         return;
@@ -322,7 +325,7 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Deref: {
         Deref_Expression *deref_expression = (Deref_Expression *)expression;
         Ws, fmt::println(stream, "Deref_Expression (type: {}): ", deref_expression->type->name());
-        Ws, fmt::println(stream, "*Expression");
+        Ws, fmt::println(stream, "*Operand");
         dump_expression(stream, deref_expression->operand, indent + 1);
         return;
     }
@@ -330,8 +333,8 @@ void Ast::dump_expression(std::ostream &stream, Expression *expression, int32 in
     case Expression_Address: {
         Address_Expression *address_expression = (Address_Expression *)expression;
         Ws, fmt::println(stream, "Address_Expression (type: {}): ", address_expression->type.name());
-        Ws, fmt::println(stream, "*Object");
-        dump_object(stream, address_expression->object, indent + 1);
+        Ws, fmt::println(stream, "*Operand");
+        dump_expression(stream, address_expression->operand, indent + 1);
         return;
     }
 

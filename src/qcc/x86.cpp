@@ -4,6 +4,7 @@
 #include "object.hpp"
 #include "statement.hpp"
 #include <fmt/ostream.h>
+#include <unordered_map>
 
 namespace qcc
 {
@@ -38,6 +39,36 @@ const Register(Gpr[16]) = {
 
 const std::string_view Spec[9] = {"0?", "byte", "word", "3?", "dword", "5?", "6?", "7?", "qword"};
 
+// Cast_Type_Key: 4 byte number that describe a type for cast:
+// (with m: mods-byte, k: kind-byte) :: 0_m_k_k
+// Cast_Key: 8 byte number, takes two "or-ed" cast_type_key that describe a cast
+
+#define Cast_Type_Key(kind, mods) ((uint64)(((uint8)mods) << 16) | kind)
+#define Cast_Key(from, into) ((from << 32) | into)
+
+enum Cast_Type_Keys : uint64
+{
+    Key_Byte = Cast_Type_Key(Type_Char, 0),
+    Key_Int16 = Cast_Type_Key(Type_Int, Type_Signed | Type_Short),
+    Key_Int32 = Cast_Type_Key(Type_Int, Type_Signed),
+    Key_Int64 = Cast_Type_Key(Type_Int, Type_Signed | Type_Long),
+
+    Key_UByte = Cast_Type_Key(Type_Char, Type_Unsigned),
+    Key_UInt32 = Cast_Type_Key(Type_Int, Type_Unsigned),
+    Key_UInt16 = Cast_Type_Key(Type_Int, Type_Signed | Type_Short),
+    Key_UInt64 = Cast_Type_Key(Type_Int, Type_Unsigned | Type_Long),
+
+    Key_Float32 = Cast_Type_Key(Type_Float, 0),
+    Key_Float64 = Cast_Type_Key(Type_Double, 0),
+};
+
+// Todo! implement real types (these are less straight-forward)
+const std::unordered_map<uint64, std::string_view> Cast_Matrix = {
+    {Cast_Key(Key_Byte, Key_Int32), "movsbl {}, {}"},  {Cast_Key(Key_UByte, Key_Int32), "movzbl {}, {}"},
+    {Cast_Key(Key_Int16, Key_Int32), "movswl {}, {}"}, {Cast_Key(Key_UInt16, Key_Int32), "movzwl {}, {}"},
+    {Cast_Key(Key_Int64, Key_Int32), "movsxd {}, {}"},
+};
+
 X86::X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream) :
     Asm(ast, allocator, source, stream)
 {
@@ -45,9 +76,9 @@ X86::X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &
 
 void X86::emit()
 {
-    fmt::println(stream, "BITS 64");
-    fmt::println(stream, "section .text");
-    fmt::println(stream, "    global _start");
+    emitln("BITS 64");
+    emitln("section .text");
+    emitln("    global _start");
     emit_statement(ast.main_statement);
 }
 
@@ -90,28 +121,28 @@ void X86::emit_function_statement(Function_Statement *function_statement)
     Function *function = function_statement->function;
 
     if (function->is_main)
-        fmt::println(stream, "_start:");
-    fmt::println(stream, "{}:", function->name.str);
-    fmt::println(stream, "    push rbp");
-    fmt::println(stream, "    mov rbp, rsp");
+        emitln("_start:");
+    emitln("{}:", function->name.str);
+    emitln("    push rbp");
+    emitln("    mov rbp, rsp");
     if (function->stack_size != 0)
-        fmt::println(stream, "    sub rsp, {}", function->stack_size);
+        emitln("    sub rsp, {}", function->stack_size);
 
     emit_scope_statement(function_statement->scope);
-    fmt::println(stream, "{}.return:", function->name.str);
+    emitln("{}.return:", function->name.str);
 
     if (function->is_main) {
-        fmt::println(stream, "    mov rax, 1");
-        fmt::println(stream, "    mov rbx, rdi");
-        fmt::println(stream, "    mov rsp, rbp");
-        fmt::println(stream, "    pop rbp");
-        fmt::println(stream, "    int 128");
+        emitln("    mov rax, 1");
+        emitln("    mov rbx, rdi");
+        emitln("    mov rsp, rbp");
+        emitln("    pop rbp");
+        emitln("    int 128");
     } else {
-        fmt::println(stream, "    mov rsp, rbp");
-        fmt::println(stream, "    pop rbp");
-        fmt::println(stream, "    ret");
+        emitln("    mov rsp, rbp");
+        emitln("    pop rbp");
+        emitln("    ret");
     }
-    fmt::println(stream, "");
+    emitln("");
 }
 
 void X86::emit_define_statement(Define_Statement *define_statement)
@@ -131,22 +162,22 @@ void X86::emit_define_statement(Define_Statement *define_statement)
 void X86::emit_condition_statement(Condition_Statement *condition_statement)
 {
     emit_expression(condition_statement->boolean, Rax);
-    fmt::println(stream, "    cmp rax, 0");
+    emitln("    cmp rax, 0");
 
     Label end_label = emit_label(Label_If_End);
     if (condition_statement->statement_else != NULL) {
         Label else_label = emit_label(Label_Else);
 
-        fmt::println(stream, "    je {}", else_label);
+        emitln("    je {}", else_label);
         emit_scope_statement(condition_statement->statement_if);
-        fmt::println(stream, "    jmp {}", end_label);
-        fmt::println(stream, "{}:", else_label);
+        emitln("    jmp {}", end_label);
+        emitln("{}:", else_label);
         emit_scope_statement(condition_statement->statement_else);
-        fmt::println(stream, "{}:", end_label);
+        emitln("{}:", end_label);
     } else {
-        fmt::println(stream, "    je {}", end_label);
+        emitln("    je {}", end_label);
         emit_scope_statement(condition_statement->statement_if);
-        fmt::println(stream, "{}:", end_label);
+        emitln("{}:", end_label);
     }
 }
 
@@ -155,12 +186,12 @@ void X86::emit_while_statement(While_Statement *while_statement)
     Label continue_label = emit_label(Label_Continue);
     Label break_label = emit_label(Label_Continue);
 
-    fmt::println(stream, "{}:", continue_label);
+    emitln("{}:", continue_label);
     emit_expression(while_statement->boolean, Rax);
-    fmt::println(stream, "    cmp rax, 0");
-    fmt::println(stream, "    je {}", break_label);
+    emitln("    cmp rax, 0");
+    emitln("    je {}", break_label);
     emit_statement(while_statement->statement);
-    fmt::println(stream, "{}:", break_label);
+    emitln("{}:", break_label);
 }
 
 void X86::emit_for_statement(For_Statement *for_statement) {}
@@ -169,7 +200,7 @@ void X86::emit_return_statement(Return_Statement *return_statement)
 {
     if (return_statement->expression != NULL)
         emit_expression(return_statement->expression, Rdi);
-    fmt::println(stream, "    jmp {}.return", return_statement->function->name.str);
+    emitln("    jmp {}.return", return_statement->function->name.str);
 }
 
 void X86::emit_expression(Expression *expression, Register regs)
@@ -197,6 +228,8 @@ void X86::emit_expression(Expression *expression, Register regs)
         return emit_deref_expression((Deref_Expression *)expression, regs);
     case Expression_Address:
         return emit_address_expression((Address_Expression *)expression, regs);
+    case Expression_Cast:
+        return emit_cast_expression((Cast_Expression *)expression, regs);
     default:
         break;
     }
@@ -204,13 +237,19 @@ void X86::emit_expression(Expression *expression, Register regs)
 
 void X86::emit_int_expression(Int_Expression *int_expression, Register regs)
 {
-    fmt::println(stream, "    mov {}, {}", regs[8], int_expression->value);
+    emitln("    mov {}, {}", regs[8], int_expression->value);
 }
 
 void X86::emit_id_expression(Id_Expression *id_expression, Register regs)
 {
     Variable *variable = (Variable *)id_expression->object;
-    emit_mov(&regs, variable, variable->type()->size);
+
+    // decay the array (do not cast it, may fall in infinite recursion)
+    if (variable->type()->kind & Type_Array) {
+	emit_lea(&regs, variable);
+    } else {
+        emit_mov(&regs, variable, variable->type()->size);
+    }
 }
 
 void X86::emit_ref_expression(Ref_Expression *ref_expression, Register regs)
@@ -234,79 +273,79 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
     else
         emit_expression(binary_expression->rhs, Rdi);
 
-    const char *f = (binary_expression->type->kind & Type_Fpr) ? "f" : "";
-    const char *i = (binary_expression->type->mods & Type_Signed) ? "i" : "";
+    const char *f = (binary_expression->type.kind & Type_Fpr) ? "f" : "";
+    const char *i = (binary_expression->type.mods & Type_Signed) ? "i" : "";
 
-    if (binary_expression->type->kind & Type_Pointer) {
-        int64 size = binary_expression->type->pointed_type->size;
-        fmt::println(stream, "    imul rdi, {}", size);
+    if (binary_expression->type.kind & (Type_Pointer | Type_Array)) {
+        int64 size = binary_expression->type.pointed_type->size;
+        emitln("    imul rdi, {}", size);
     }
 
     emit_pop(&Rax);
     switch (binary_expression->operation.type) {
     case Token_Add:
-        fmt::println(stream, "    {}add rax, rdi", f);
+        emitln("    {}add rax, rdi", f);
         break;
     case Token_Sub:
-        fmt::println(stream, "    {}sub rax, rdi", f);
+        emitln("    {}sub rax, rdi", f);
         break;
     case Token_Mul:
-        fmt::println(stream, "    {}{}mul rax, rdi", i, f);
+        emitln("    {}{}mul rax, rdi", i, f);
         break;
     case Token_Div:
-        fmt::println(stream, "    {}{}div rax, rdi", i, f);
+        emitln("    {}{}div rax, rdi", i, f);
         break;
     case Token_Mod:
-        fmt::println(stream, "    mod rax, rdi");
+        emitln("    mod rax, rdi");
         break;
 
     case Token_Eq:
-        fmt::println(stream, "    cmp rax, rdi");
-        fmt::println(stream, "    sete al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rax, rdi");
+        emitln("    sete al");
+        emitln("    movzx rax, al");
         break;
     case Token_Not_Eq:
-        fmt::println(stream, "    cmp rax, rdi");
-        fmt::println(stream, "    setne al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rax, rdi");
+        emitln("    setne al");
+        emitln("    movzx rax, al");
         break;
     case Token_Less:
-        fmt::println(stream, "    cmp rax, rdi");
-        fmt::println(stream, "    setl al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rax, rdi");
+        emitln("    setl al");
+        emitln("    movzx rax, al");
         break;
     case Token_Less_Eq:
-        fmt::println(stream, "    cmp rax, rdi");
-        fmt::println(stream, "    setle al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rax, rdi");
+        emitln("    setle al");
+        emitln("    movzx rax, al");
         break;
     case Token_Greater:
-        fmt::println(stream, "    cmp rdi, rax");
-        fmt::println(stream, "    setl al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rdi, rax");
+        emitln("    setl al");
+        emitln("    movzx rax, al");
         break;
     case Token_Greater_Eq:
-        fmt::println(stream, "    cmp rdi, rax");
-        fmt::println(stream, "    setle al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rdi, rax");
+        emitln("    setle al");
+        emitln("    movzx rax, al");
         break;
 
     case Token_Bitwise_And:
-        fmt::println(stream, "    and rax, rdi");
+        emitln("    and rax, rdi");
         break;
     case Token_Bitwise_Or:
-        fmt::println(stream, "    or rax, rdi");
+        emitln("    or rax, rdi");
         break;
     case Token_Bitwise_Xor:
-        fmt::println(stream, "    xor rax, rdi");
+        emitln("    xor rax, rdi");
         break;
 
     // sal/sar instructions uses the count register
     case Token_Shift_L:
-        fmt::println(stream, "    sal rax, cl");
+        emitln("    sal rax, cl");
         break;
     case Token_Shift_R:
-        fmt::println(stream, "    sar rax, cl");
+        emitln("    sar rax, cl");
         break;
 
     default:
@@ -314,7 +353,7 @@ void X86::emit_binary_expression(Binary_Expression *binary_expression, Register 
     }
 
     if (regs.gpr != Rax.gpr) {
-        fmt::println(stream, "    mov {}, rax", regs[8]);
+        emitln("    mov {}, rax", regs[8]);
     }
 }
 
@@ -327,15 +366,15 @@ void X86::emit_unary_expression(Unary_Expression *unary_expression, Register reg
     emit_expression(unary_expression->operand, Rax);
     switch (unary_expression->operation.type) {
     case Token_Sub:
-        fmt::println(stream, "    neg rax");
+        emitln("    neg rax");
         break;
     case Token_Not:
-        fmt::println(stream, "    cmp rax, 0");
-        fmt::println(stream, "    sete al");
-        fmt::println(stream, "    movzx rax, al");
+        emitln("    cmp rax, 0");
+        emitln("    sete al");
+        emitln("    movzx rax, al");
         break;
     case Token_Bitwise_Not:
-        fmt::println(stream, "    not rax");
+        emitln("    not rax");
         break;
     default:
         break;
@@ -351,25 +390,25 @@ void X86::emit_increment_expression(Unary_Expression *unary_expression, Register
     emit_expression(unary_expression->operand, regs);
 
     if (unary_expression->order == Expression_Lhs) {
-        emit_mov(&Rax, &regs, unary_expression->type->size);
+        emit_mov(&Rax, &regs, unary_expression->type.size);
         regs = Rax;
     }
 
-    if (unary_expression->type->kind & (Type_Pointer)) {
-        int64 size = unary_expression->type->pointed_type->size;
+    if (unary_expression->type.kind & (Type_Pointer)) {
+        int64 size = unary_expression->type.pointed_type->size;
         if (unary_expression->operation.type & Token_Increment)
-            fmt::println(stream, "    add {}, {}", regs[8], size);
+            emitln("    add {}, {}", regs[8], size);
         if (unary_expression->operation.type & Token_Decrement)
-            fmt::println(stream, "    sub {}, {}", regs[8], size);
+            emitln("    sub {}, {}", regs[8], size);
     } else {
         if (unary_expression->operation.type & Token_Increment)
-            fmt::println(stream, "    inc {}", regs[8]);
+            emitln("    inc {}", regs[8]);
         if (unary_expression->operation.type & Token_Decrement)
-            fmt::println(stream, "    dec {}", regs[8]);
+            emitln("    dec {}", regs[8]);
     }
 
     Source destination = emit_expression_source(unary_expression->operand, Rdi);
-    emit_mov(&destination, &regs, unary_expression->type->size);
+    emit_mov(&destination, &regs, unary_expression->type.size);
 }
 
 void X86::emit_invoke_expression(Invoke_Expression *invoke_expression, Register regs)
@@ -395,13 +434,13 @@ void X86::emit_invoke_expression(Invoke_Expression *invoke_expression, Register 
         Assign_Expression *assign_expression = argument_expression->assign_expression;
         emit_assign_expression(assign_expression, regs, true);
     }
-    fmt::println(stream, "    call {}", function->name.str);
+    emitln("    call {}", function->name.str);
 
     if (function->invoke_size != 0) {
-        fmt::println(stream, "    add rsp, {}", function->invoke_size);
+        emitln("    add rsp, {}", function->invoke_size);
     }
     if (regs.gpr != Rdi.gpr) {
-        fmt::println(stream, "    mov {}, rdi", regs[8]);
+        emitln("    mov {}, rdi", regs[8]);
     }
 
     if (use_time < uses_timeline.size()) {
@@ -471,7 +510,7 @@ Source X86::emit_expression_source(Expression *expression, Register regs)
 
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
-        Source source = emit_expression_source(dot_expression->expression, regs);
+        Source source = emit_expression_source(dot_expression->operand, regs);
         int64 offset = dot_expression->member->struct_offset;
         return source.with_offset(offset);
     }
@@ -493,6 +532,16 @@ Source X86::emit_expression_source(Expression *expression, Register regs)
         return regs.with_indirection();
     }
 
+    case Expression_Unary: {
+        emit_unary_expression((Unary_Expression *)expression, regs);
+        return regs;
+    }
+
+    case Expression_Binary: {
+        emit_binary_expression((Binary_Expression *)expression, regs);
+        return regs;
+    }
+
     default:
         qcc_todo("emit expression kind");
         return Source{};
@@ -508,31 +557,43 @@ void X86::emit_deref_expression(Deref_Expression *deref_expression, Register reg
 
 void X86::emit_address_expression(Address_Expression *address_expression, Register regs)
 {
-    Source *source = address_expression->object->source();
-    qcc_assert(source != NULL, "object is not sourced");
+    Source address = emit_expression_source(address_expression->operand, regs);
+    emit_lea(&regs, &address);
+}
 
-    if (source->location & Source_Stack)
-        fmt::println(stream, "    lea {}, [rbp {:+}]", regs[8], source->address + source->offset);
+void X86::emit_cast_expression(Cast_Expression *cast_expression, Register regs)
+{
+    const Type *from = cast_expression->from;
+    const Type *into = &cast_expression->into;
+
+    uint64 from_key = Cast_Type_Key(from->kind, from->mods);
+    uint64 into_key = Cast_Type_Key(into->kind, into->mods);
+    uint64 cast_key = Cast_Key(from_key, into_key);
+    auto cast_match = Cast_Matrix.find(cast_key);
+
+    emit_expression(cast_expression->operand, regs);
+    if (cast_match != Cast_Matrix.end()) {
+        std::string_view cast_asm = cast_match->second;
+        emitf("    "), emitln(cast_asm, regs[into->size], regs[from->size]);
+    }
 }
 
 void X86::emit_source_operand(const Source *source, int64 size)
 {
-    qcc_assert(size <= 8, "source does not fit in an x86_64 register");
-    qcc_assert(!source->offset or
-                   (source->has_indirection or source->location & (Source_Stack | Source_Data)),
+    qcc_assert(size <= 8, "source does not fit in an x86 register");
+    qcc_assert(!source->offset or (source->indirect or source->location & (Source_Stack | Source_Data)),
                "cannot offset a register without indirection");
-    qcc_assert(!source->has_indirection or source->location & Source_Gpr,
-               "cannot indirect a non register source");
+    qcc_assert(!source->indirect or source->location & Source_Gpr, "cannot indirect a non register source");
 
     switch (source->location) {
     case Source_Stack:
-        fmt::print(stream, "{} [rbp {:+}]", Spec[size], source->address + source->offset);
+        emitf("{} [rbp {:+}]", Spec[size], source->address + source->offset);
         break;
     case Source_Gpr:
-        if (source->has_indirection) {
-            fmt::print(stream, "[{} {:+}]", Gpr[source->gpr][8], source->offset);
+        if (source->indirect) {
+            emitf("[{} {:+}]", Gpr[source->gpr][8], source->offset);
         } else {
-            fmt::print(stream, "{}", Gpr[source->gpr][size]);
+            emitf("{}", Gpr[source->gpr][size]);
         }
         break;
     default:
@@ -542,25 +603,34 @@ void X86::emit_source_operand(const Source *source, int64 size)
 
 void X86::emit_push(const Source *source)
 {
-    fmt::print(stream, "    push ");
+    emitf("    push ");
     emit_source_operand(source, 8);
-    fmt::println(stream, "");
+    emitln("");
 }
 
 void X86::emit_pop(const Source *source)
 {
-    fmt::print(stream, "    pop ");
+    emitf("    pop ");
     emit_source_operand(source, 8);
-    fmt::println(stream, "");
+    emitln("");
 }
 
 void X86::emit_mov(const Source *destination, const Source *source, int64 size)
 {
-    fmt::print(stream, "    mov ");
+    emitf("    mov ");
     emit_source_operand(destination, size);
-    fmt::print(stream, ", ");
+    emitf(", ");
     emit_source_operand(source, size);
-    fmt::println(stream, "");
+    emitln("");
+}
+
+void X86::emit_lea(const Source *destination, const Source *source)
+{
+    emitf("    lea ");
+    emit_source_operand(destination, 8);
+    emitf(", ");
+    emit_source_operand(source, 8);
+    emitln("");
 }
 
 } // namespace qcc

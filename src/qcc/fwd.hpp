@@ -42,11 +42,11 @@ struct Cast_Expression;
 struct Dot_Expression;
 struct Deref_Expression;
 struct Address_Expression;
-struct Subscript_Expression;
 struct Ref_Expression;
 
 enum Object_Kind : uint32;
-enum Type_Mod : uint32;
+enum Type_Kind : uint16;
+enum Type_Mod : uint8;
 enum Type_Storage : uint32;
 enum Define_Env : uint32;
 struct Object;

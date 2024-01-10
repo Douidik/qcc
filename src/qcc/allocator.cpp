@@ -128,7 +128,7 @@ void Allocator::parse_begin_of_use(Variable *variable)
         return;
     }
 
-    else if (variable->type()->kind & (Type_Struct | Type_Union) or variable->env & Define_Parameter) {
+    else if (variable->type()->kind & Type_Aggregate or variable->env & Define_Parameter) {
         variable->location = Source_Stack;
     }
 
@@ -311,13 +311,13 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Cast: {
         Cast_Expression *cast_expression = (Cast_Expression *)expression;
-        parse_expression_use_ranges(cast_expression->expression);
+        parse_expression_use_ranges(cast_expression->operand);
         break;
     }
 
     case Expression_Dot: {
         Dot_Expression *dot_expression = (Dot_Expression *)expression;
-        parse_expression_use_ranges(dot_expression->expression);
+        parse_expression_use_ranges(dot_expression->operand);
         break;
     }
 
@@ -329,9 +329,7 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
 
     case Expression_Address: {
         Address_Expression *address_expression = (Address_Expression *)expression;
-        if (address_expression->object->kind() & Object_Variable) {
-            parse_new_use((Variable *)address_expression->object);
-        }
+        parse_expression_use_ranges(address_expression->operand);
         break;
     }
 

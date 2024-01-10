@@ -137,6 +137,8 @@ const int128 Token_Mask_Skip = Token_Blank | Token_Comment;
 const int128 Token_Mask_Compare =
     Token_Eq | Token_Not_Eq | Token_Less | Token_Less_Eq | Token_Greater | Token_Greater_Eq;
 
+const int128 Token_Mask_Boolean = Token_Mask_Compare | Token_And | Token_Or | Token_Not;
+
 const int128 Token_Mask_Operator = Token_Mask_Compare | Token_Increment | Token_Decrement | Token_Add |
                                    Token_Sub | Token_Mul | Token_Div | Token_Mod | Token_Not |
                                    Token_Bitwise_Not | Token_Bitwise_And | Token_Bitwise_Or |
@@ -160,8 +162,8 @@ const int128 Token_Mask_Fundamental =
 
 const int128 Token_Mask_Record = Token_Struct | Token_Union | Token_Enum;
 
-const int128 Token_Mask_Bin = Token_Bitwise_Not | Token_Bitwise_And | Token_Bitwise_Or | Token_Bitwise_Xor |
-                              Token_Shift_L | Token_Shift_R;
+const int128 Token_Mask_Bitwise = Token_Bitwise_Not | Token_Bitwise_And | Token_Bitwise_Or |
+                                  Token_Bitwise_Xor | Token_Shift_L | Token_Shift_R;
 
 const int128 Token_Mask_Hash = Token_Hash_Include | Token_Hash_Define | Token_Hash_Undef | Token_Hash_Ifdef |
                                Token_Hash_Ifndef | Token_Hash_Elif | Token_Hash_Else | Token_Hash_Endif;

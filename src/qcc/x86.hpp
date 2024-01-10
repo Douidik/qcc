@@ -35,12 +35,14 @@ struct X86 : Asm
     void emit_dot_expression(Dot_Expression *dot_expression, Register regs);
     void emit_deref_expression(Deref_Expression *deref_expression, Register regs);
     void emit_address_expression(Address_Expression *address_expression, Register regs);
-
+    void emit_cast_expression(Cast_Expression *cast_expression, Register regs);
+    
     Source emit_expression_source(Expression *expression, Register regs);
     void emit_source_operand(const Source *source, int64 size);
     void emit_push(const Source *source);
     void emit_pop(const Source *source);
     void emit_mov(const Source *destination, const Source *source, int64 size);
+    void emit_lea(const Source *destination, const Source *source);
 };
 
 } // namespace qcc

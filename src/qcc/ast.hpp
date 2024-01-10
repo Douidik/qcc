@@ -15,6 +15,7 @@ struct Ast
     Scope_Statement *main_statement;
 
     ~Ast();
+    // Todo! remove
     Object *decode_designated_expression(Expression *expression);
     void dump_statement(std::ostream &stream, Statement *statement, int32 indent);
     void dump_expression(std::ostream &stream, Expression *expression, int32 indent);

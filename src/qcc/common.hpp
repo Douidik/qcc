@@ -44,23 +44,23 @@ constexpr size_t npos = (size_t)-1;
 static inline void qcc_print_crash(std::string_view context, std::string_view message,
                                    std::source_location source_location)
 {
-    std::string_view file = source_location.file_name();
+    fs::path file = source_location.file_name();
     std::string_view function = source_location.function_name();
     uint32 line = source_location.line();
-    fmt::print(stderr, "{} ({}:{}:{}): {}\n", context, file, function, line, message);
+    fmt::print(stderr, "{} ({}:{}:{}): {}\n", context, file.filename().string(), function, line, message);
     abort();
 }
 
-static inline void qcc_assert(bool boolean, std::string_view message,
+static inline void qcc_assert(bool boolean, std::string_view message = "?",
                               std::source_location source_location = std::source_location::current())
 {
     [[unlikely]] if (!boolean) {
         qcc_print_crash("assertion failed!", message, source_location);
     }
 }
-    
+
 [[noreturn]]
-static inline void qcc_todo(std::string_view message = "",
+static inline void qcc_todo(std::string_view message = "?",
                             std::source_location source_location = std::source_location::current())
 {
     qcc_print_crash("todo!", message, source_location);

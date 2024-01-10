@@ -17,6 +17,14 @@ struct Declarator
     bool has_matched_function;
 };
 
+// This refers to what's commonly called values categories (lvalue, rvalue, funciton designators)
+enum Expression_Category
+{
+    Expression_L,
+    Expression_R,
+    Expression_Fd,
+};
+
 struct Parser
 {
     Ast &ast;
@@ -25,7 +33,7 @@ struct Parser
     std::deque<Token> token_queue;
     std::deque<Statement *> context;
     bool verbose;
-    
+
     Parser(Ast &ast, Scanner &scanner, bool verbose);
 
     Statement *parse();
@@ -75,26 +83,29 @@ struct Parser
     Argument_Expression *parse_argument_expression(Token token, Function *function,
                                                    Define_Statement *parameter);
     Invoke_Expression *parse_invoke_expression(Token token, Expression *function_expression);
-    Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type *type);
+    Cast_Expression *parse_cast_expression(Token token, Expression *expression, Type type);
     Dot_Expression *parse_dot_expression(Token token, Expression *previous);
     Dot_Expression *parse_arrow_expression(Token token, Expression *previous);
     Deref_Expression *parse_deref_expression(Token token, Expression *operand);
     Address_Expression *parse_address_expression(Token token, Expression *operand);
-    Subscript_Expression *parse_subscript_expression(Token token, Expression *operand);
+    Expression *parse_subscript_expression(Token token, Expression *operand);
     Assign_Expression *parse_assign_expression(Token token, Expression *lhs, Expression *rhs);
     Ref_Expression *parse_ref_expression(Object *object, Type *type);
 
-    Expression *cast_if_needed(Token token, Expression *expression, Type *type);
+    Cast_Expression *cast_array_decay(Token token, Expression *expression);
+    Expression *cast_if_needed(Token token, Expression *expression, Type type);
+    Expression *typecheck_binary_operand(Expression *operand, Token operation);
     Expression *typecheck_binary_expression(Binary_Expression *binary_expression);
-    Expression *typecheck_unary_expression(Unary_Expression *unary_expression);
+    Expression *typecheck_unary_operand(Expression *operand, Token operation);
     int64 parse_constant(Token token, Expression *expression);
 
     bool token_is_typedef(Token token);
+    Expression_Category categorize_expression(Expression *expression);
     Scope_Statement *context_scope();
     Statement *context_of(uint32 statement_mask);
     Statement *context_push(Statement *statement);
     Statement *context_pop();
-    
+
     bool is_eof() const;
     Token peek_until(int128 mask);
     Token peek(int128 mask);

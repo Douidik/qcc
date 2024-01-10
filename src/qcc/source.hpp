@@ -19,7 +19,7 @@ struct Source
 {
     Source_Location location;
     int64 offset; // Stack-offset / Indirect-register-addressing-offset
-    bool has_indirection;
+    bool indirect;
 
     union {
         int64 gpr;         // Source_Gpr
@@ -31,7 +31,7 @@ struct Source
 
     Source with_offset(int64 x) const
     {
-        qcc_assert(location & (Source_Stack | Source_Data) or has_indirection, "cannot offset source");
+        qcc_assert(location & (Source_Stack | Source_Data) or indirect, "cannot offset source");
 
         Source s = *this;
         s.offset = offset + x;
@@ -71,7 +71,7 @@ struct Register : Source
     Register with_indirection() const
     {
         Register r = *this;
-        r.has_indirection = true;
+        r.indirect = true;
         return r;
     }
 };

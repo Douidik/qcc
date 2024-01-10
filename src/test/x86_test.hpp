@@ -12,8 +12,8 @@
 #include <gtest/gtest.h>
 #include <sys/wait.h>
 
-#ifndef QCC_TEST_PATH
-#define QCC_TEST_PATH "test/"
+#ifndef Qcc_Test_Path
+#define Qcc_Test_Path "test/"
 #endif
 
 namespace qcc
@@ -79,9 +79,9 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
 }
 
 #define Expect_Return(filepath, expected_return) \
-    EXPECT_TRUE(expect_return(QCC_TEST_PATH filepath, expected_return))
+    EXPECT_TRUE(expect_return(Qcc_Test_Path filepath, expected_return))
 // We choose 1 as the success exit code because it's easier to deal with equality operators
-#define Expect_Ok(filepath) EXPECT_TRUE(expect_return(QCC_TEST_PATH filepath, 1))
+#define Expect_Ok(filepath) EXPECT_TRUE(expect_return(Qcc_Test_Path filepath, 1))
 
 TEST(X86, Common)
 {
@@ -93,6 +93,7 @@ TEST(X86, Common)
     Expect_Ok("header.c");
     Expect_Ok("precedence.c");
     Expect_Ok("binary_assignment.c");
+    Expect_Ok("array.c");
 }
 
 } // namespace qcc

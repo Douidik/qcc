@@ -4,6 +4,7 @@
 #include "allocator.hpp"
 #include "fwd.hpp"
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 #include <ostream>
 
 namespace qcc
@@ -37,6 +38,17 @@ struct Asm
     Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream);
     Label emit_label(Label_Type type);
     virtual void emit() = 0;
+
+    void emitln(std::string_view fmt, auto... args)
+    {
+	emitf(fmt, args...);
+	emitf("\n");
+    }
+
+    void emitf(std::string_view fmt, auto... args)
+    {
+        fmt::print(stream, fmt::runtime(fmt), args...);
+    }
 };
 
 } // namespace qcc

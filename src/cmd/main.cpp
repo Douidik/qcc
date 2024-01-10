@@ -58,7 +58,7 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();
     if (verbose) {
-        ast.dump_statement(std::cout, (Statement *)ast.main_statement, 0);
+        ast.dump_statement(std::cerr, (Statement *)ast.main_statement, 0);
     }
     std::fstream fstream_asm(filepath_asm, std::ios::out | std::ios::trunc);
     X86 x86 = {ast, allocator, source, fstream_asm};

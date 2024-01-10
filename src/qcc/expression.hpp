@@ -26,8 +26,7 @@ enum Expression_Kind : uint32
     Expression_Dot = Bit(uint32, 13),
     Expression_Deref = Bit(uint32, 14),
     Expression_Address = Bit(uint32, 15),
-    Expression_Subscript = Bit(uint32, 16),
-    Expression_Ref = Bit(uint32, 17),
+    Expression_Ref = Bit(uint32, 16),
 };
 
 enum Expression_Order : uint32
@@ -40,7 +39,7 @@ enum Expression_Order : uint32
 struct Expression
 {
     bool endpoint = false;
-    
+
     virtual ~Expression() = default;
     virtual Expression_Kind kind() const = 0;
 };
@@ -50,7 +49,7 @@ struct Unary_Expression : Expression
     Token operation;
     Expression *operand;
     Expression_Order order;
-    Type *type;
+    Type type;
 
     Expression_Kind kind() const override
     {
@@ -63,7 +62,7 @@ struct Binary_Expression : Expression
     Token operation;
     Expression *lhs;
     Expression *rhs;
-    Type *type;
+    Type type;
 
     Expression_Kind kind() const override
     {
@@ -200,8 +199,8 @@ struct Assign_Expression : Expression
 struct Cast_Expression : Expression
 {
     Type *from;
-    Type *into;
-    Expression *expression;
+    Type into;
+    Expression *operand;
 
     Expression_Kind kind() const override
     {
@@ -211,7 +210,7 @@ struct Cast_Expression : Expression
 
 struct Dot_Expression : Expression
 {
-    Expression *expression;
+    Expression *operand;
     Variable *member;
     Struct_Statement *struct_statement;
 
@@ -234,24 +233,12 @@ struct Deref_Expression : Expression
 
 struct Address_Expression : Expression
 {
-    Object *object;
+    Expression *operand;
     Type type;
 
     Expression_Kind kind() const override
     {
         return Expression_Address;
-    }
-};
-
-struct Subscript_Expression : Expression
-{
-    Expression *operand;
-    Expression *index;
-    Type *type;
-
-    Expression_Kind kind() const override
-    {
-        return Expression_Subscript;
     }
 };
 

@@ -35,11 +35,6 @@ struct Object
     {
         return false;
     };
-
-    virtual bool has_address() const
-    {
-        return false;
-    };
 };
 
 struct Function : Object
@@ -61,11 +56,6 @@ struct Function : Object
         qcc_todo("type function objects");
         return NULL;
     }
-
-    bool has_address() const override
-    {
-        return true;
-    };
 };
 
 enum Define_Env : uint32
@@ -126,11 +116,6 @@ struct Variable : Object, Source
     {
         return !(var_type.cvr & Type_Const);
     }
-
-    bool has_address() const override
-    {
-        return var_type.storage != Type_Register;
-    }
 };
 
 struct Typedef : Object
@@ -181,11 +166,6 @@ struct String : Object, Source
     Type *type() override
     {
         return &string_type;
-    }
-
-    bool has_address() const override
-    {
-        return true;
     }
 };
 
