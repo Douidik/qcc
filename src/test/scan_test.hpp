@@ -1,7 +1,7 @@
 #ifndef QCC_SCAN_TEST_HPP
 #define QCC_SCAN_TEST_HPP
 
-#include "scan/scanner.hpp"
+#include "preprocess.hpp"
 #include <gtest/gtest.h>
 
 namespace qcc
@@ -12,14 +12,29 @@ TEST(Scan, Syntax_Map_Test)
     EXPECT_NO_THROW(syntax_map_c89());
 }
 
-static testing::AssertionResult match_tokens(std::string_view source_view, std::vector<Token> tokens)
+static Token Fp_Token = {"test!", Token_Hash_Cwd_Filepath, true};
+
+static void preprocess(Preprocessor &preprocessor, std::string_view source)
 {
+    Source_Context source_context = {};
+    source_context.source = source;
+    source_context.stream = source;
+    source_context.filepath = &Fp_Token;
+    source_context.hash = (int64)&source_context;
+    preprocessor.process_context(&source_context, true, Token_Blank);
+}
+
+static testing::AssertionResult match_tokens(std::string_view source_view, std::vector<Token> expected_tokens)
+{
+    Preprocessor preprocessor = {"test!"};
+
     std::string source(source_view);
     source.push_back('\n');
+    preprocess(preprocessor, source);
 
-    Scanner scanner = {source, ""};
-    for (Token expected : tokens) {
-        Token token = scanner.tokenize(syntax_map_c89(), Token_Blank);
+    for (size_t i = 0; i < expected_tokens.size(); i++) {
+        Token expected = expected_tokens[i];
+        Token token = preprocessor.tokens[i];
 
         if (token.type != expected.type) {
             std::string_view token_type = token_type_str(token.type);
@@ -30,21 +45,12 @@ static testing::AssertionResult match_tokens(std::string_view source_view, std::
             return testing::AssertionFailure() << "'" << token.str << "' != '" << expected.str << "'";
         }
     }
+
     return testing::AssertionSuccess();
 }
 
-static void scan_source(std::string_view source_view)
-{
-    std::string source(source_view);
-    source.push_back('\n');
-    Scanner scanner = {source, ""};
-    for (Token token; token.type != Token_Eof;) {
-        token = scanner.tokenize(syntax_map_c89(), Token_Blank);
-    }
-}
-
 #define Expect_Tokens(source, ...) EXPECT_TRUE(match_tokens(source, {__VA_ARGS__}))
-#define Expect_Scanner_Error(source) EXPECT_THROW(scan_source(source), Error)
+#define Expect_Scanner_Error(source) EXPECT_THROW(match_tokens(source, {}), Error)
 
 TEST(Scanner, Comment)
 {

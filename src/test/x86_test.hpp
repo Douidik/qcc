@@ -4,8 +4,7 @@
 #include "allocator.hpp"
 #include "ast.hpp"
 #include "parser.hpp"
-#include "scan/scanner.hpp"
-#include "scan/syntax_map.hpp"
+#include "preprocess.hpp"
 #include "x86.hpp"
 #include <fmt/format.h>
 #include <fstream>
@@ -50,16 +49,15 @@ static testing::AssertionResult expect_return(std::string_view file, int expecte
     std::string filepath_exe = make_build_filepath(filename, "");
 
     Ast ast = {};
-    std::string source = fstream_to_str(filepath);
-    Scanner scanner = {source, filepath.parent_path()};
-
-    Parser parser = {ast, scanner, false};
+    Preprocessor preprocessor = {filepath.string()};
+    preprocessor.process();
+    Parser parser = {ast, &preprocessor.tokens[0], false};
     parser.parse();
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();
 
     std::fstream fstream_asm(filepath_asm, std::ios::out | std::ios::trunc);
-    X86 x86 = {ast, allocator, source, fstream_asm};
+    X86 x86 = {ast, allocator, fstream_asm};
     x86.emit();
     fstream_asm.close();
 

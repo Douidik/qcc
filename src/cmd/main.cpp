@@ -1,7 +1,7 @@
 #include "allocator.hpp"
 #include "ast.hpp"
 #include "parser.hpp"
-#include "scan/scanner.hpp"
+#include "preprocess.hpp"
 #include "x86.hpp"
 #include <fstream>
 #include <getopt.h>
@@ -43,25 +43,35 @@ int x86_compile(fs::path filepath, fs::path output, bool verbose)
         output = directory / filename;
     }
 
-    Ast ast = {};
-
     std::fstream source_fstream(filepath);
     if (!source_fstream.is_open()) {
         fmt::println(stderr, "cannot open source file from '{}'", filepath.string());
         return 1;
     }
 
-    std::string source = fstream_to_str(std::move(source_fstream));
-    Scanner scanner = {source, filepath.parent_path()};
-    Parser parser = {ast, scanner, verbose};
+    Ast ast = {};
+    Preprocessor preprocessor = {filepath.string()};
+    preprocessor.process();
+    if (verbose) {
+        int32 pad = 0;
+        for (Token &token : preprocessor.tokens) {
+            pad = Max(pad, token.str.size());
+        }
+        for (Token &token : preprocessor.tokens) {
+            fmt::println(stderr, "{:{}?}{}", token.str, pad + 4, token.type_str);
+        }
+    }
+
+    Parser parser = {ast, &preprocessor.tokens[0], verbose};
     parser.parse();
     Allocator allocator = {ast, 7, 7};
     allocator.allocate();
     if (verbose) {
         ast.dump_statement(std::cerr, (Statement *)ast.main_statement, 0);
     }
+
     std::fstream fstream_asm(filepath_asm, std::ios::out | std::ios::trunc);
-    X86 x86 = {ast, allocator, source, fstream_asm};
+    X86 x86 = {ast, allocator, fstream_asm};
     x86.emit();
     fstream_asm.close();
 

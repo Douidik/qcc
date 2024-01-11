@@ -9,7 +9,7 @@ namespace qcc
 
 struct X86 : Asm
 {
-    X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream);
+    X86(Ast &ast, Allocator &allocator, std::ostream &stream);
 
     void emit() override;
     void emit_statement(Statement *statement);

@@ -8,12 +8,23 @@ namespace qcc
 
 enum Token_Type : int128;
 
+struct Source_Context
+{
+    std::string_view source;
+    std::string_view stream;
+    struct Token *filepath;
+    int32 line;
+    int64 hash;
+};
+
 struct Token
 {
     std::string_view str;
     Token_Type type;
     bool ok;
-    std::string_view source;
+
+    Token *macro;
+    Source_Context context;
     std::string_view type_str;
 };
 
@@ -123,11 +134,12 @@ enum Token_Type : int128
     Token_Hash_Else = Bit(int128, 97),
     Token_Hash_Endif = Bit(int128, 98),
 
-    Token_Hash_Project_Filepath = Bit(int128, 99),
+    Token_Hash_Cwd_Filepath = Bit(int128, 99),
     Token_Hash_System_Filepath = Bit(int128, 100),
 
-    Token_Merged = Bit(int128, 101),
-    Token_Type_End = Bit(int128, 102),
+    Token_Newline = Bit(int128, 101),
+    Token_Merged = Bit(int128, 102),
+    Token_Type_End = Bit(int128, 103),
 };
 
 const int128 Token_Mask_Each = ~((int128)0);
@@ -168,13 +180,27 @@ const int128 Token_Mask_Bitwise = Token_Bitwise_Not | Token_Bitwise_And | Token_
 const int128 Token_Mask_Hash = Token_Hash_Include | Token_Hash_Define | Token_Hash_Undef | Token_Hash_Ifdef |
                                Token_Hash_Ifndef | Token_Hash_Elif | Token_Hash_Else | Token_Hash_Endif;
 
+static void match_token_contexts(Token *lhs, Token *rhs)
+{
+    for (Token *a = lhs; a != NULL; a = a->macro) {
+        for (Token *b = lhs; b != NULL; b = b->macro) {
+            if (a->context.hash == b->context.hash) {
+                *lhs = *a, *rhs = *b;
+                return;
+            }
+        }
+    }
+    qcc_assert(0, "cannot match token contexts");
+}
+
 static Token operator|(Token lhs, Token rhs)
 {
     if (!lhs.type)
         return rhs;
     if (!rhs.type)
         return lhs;
-
+    match_token_contexts(&lhs, &rhs);
+    
     Token token = {};
 
     const char *begin = lhs.str.begin();
@@ -183,7 +209,7 @@ static Token operator|(Token lhs, Token rhs)
     token.str = std::string_view{};
 
     return Token{
-        std::string_view{std::min(begin, end), std::max(begin, end)},
+        std::string_view{Min(begin, end), Max(begin, end)},
         Token_Merged,
         false,
     };
@@ -373,11 +399,13 @@ constexpr std::string_view token_type_str(Token_Type type)
         return "#else";
     case Token_Hash_Endif:
         return "#endif";
-    case Token_Hash_Project_Filepath:
-        return "project-filepath";
+    case Token_Hash_Cwd_Filepath:
+        return "cwd-filepath";
     case Token_Hash_System_Filepath:
         return "system-filepath";
-
+    case Token_Newline:
+	return "newline";
+	
     default:
         return "?";
     }

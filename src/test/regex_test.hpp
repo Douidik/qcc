@@ -87,7 +87,6 @@ TEST(Regex, Range)
 
 TEST(Regex, Set)
 {
-    EXPECT_TRUE("_"_rx.match("\n"));
     EXPECT_TRUE("a"_rx.match("a"));
     EXPECT_TRUE("o"_rx.match("+"));
     EXPECT_TRUE("n"_rx.match("7"));

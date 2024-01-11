@@ -3,7 +3,6 @@
 #include "escape_sequence.hpp"
 #include "expression.hpp"
 #include "object.hpp"
-#include "scan/scanner.hpp"
 #include "statement.hpp"
 #include <cctype>
 #include <charconv>
@@ -12,7 +11,7 @@
 namespace qcc
 {
 
-Parser::Parser(Ast &ast, Scanner &scanner, bool verbose) : ast(ast), scanner(scanner), verbose(verbose) {}
+Parser::Parser(Ast &ast, Token *source, bool verbose) : ast(ast), source(source), verbose(verbose) {}
 
 Statement *Parser::parse()
 {
@@ -440,7 +439,7 @@ Scope_Statement *Parser::parse_enum_scope_statement(Token keyword, Type *enum_ty
             it->variable->enum_constant = it_previous != NULL ? it_previous->variable->enum_constant + 1 : 0;
         }
 
-        enum_max = std::max(enum_max, it->variable->enum_constant);
+        enum_max = Max(enum_max, it->variable->enum_constant);
     }
 
     if (enum_max > INT32_MAX) {
@@ -803,7 +802,7 @@ Expression *Parser::parse_increment_expression(Token operation, Expression *oper
 
     if (precedence_now >= precedence) {
         operand->endpoint = true;
-        enqueue(operation);
+        source--;
         return operand;
     }
 
@@ -825,7 +824,7 @@ Expression *Parser::parse_unary_expression(Token operation, Expression_Order ord
     int32 precedence_now = unary_operator_precedence(operation.type, order);
     if (precedence_now >= precedence) {
         operand->endpoint = true;
-        enqueue(operation);
+        source--;
         return operand;
     }
 
@@ -864,7 +863,7 @@ Expression *Parser::parse_binary_expression(Token operation, Expression *lhs, in
 
     int32 precedence_now = binary_operator_precedence(operation.type);
     if (precedence_now >= precedence) {
-        enqueue(operation);
+        source--;
         lhs->endpoint = true;
         return lhs;
     }
@@ -1227,16 +1226,11 @@ Statement *Parser::context_pop()
     return statement;
 }
 
-bool Parser::is_eof() const
-{
-    return scanner.current_source().stream.empty() and token_queue.empty();
-}
-
 Token Parser::peek_until(int128 mask)
 {
     Token token = peek(mask);
 
-    if (!token.ok and !is_eof())
+    if (!token.ok and !(source->type & Token_Eof))
         return token;
     if (!token.ok)
         throw errorf("unexpected end of file", token);
@@ -1316,41 +1310,19 @@ int64 Parser::parse_constant(Token token, Expression *expression)
 
 Token Parser::peek(int128 mask)
 {
-    Token token = {};
-
-    if (!token_queue.empty()) {
-        token = token_queue.front();
-    } else {
-        token = scanner.tokenize(syntax_map_c89());
-        token_queue.emplace_back(token);
-    }
-
+    Token token = *source;
     token.ok = token.type & mask;
     return token;
 }
 
 Token Parser::scan(int128 mask)
 {
-    Token token = {};
-
-    if (token_queue.size() != 0) {
-        token = token_queue.front();
-        token_queue.pop_front();
-    } else {
-        token = scanner.tokenize(syntax_map_c89());
-    }
-
+    if (source->type & Token_Eof)
+        return *source;
+    Token token = *source;
     token.ok = token.type & mask;
-    if (!token.ok and token.type != Token_Eof) {
-        token_queue.emplace_back(token);
-    }
-    return token;
-}
-
-Token Parser::enqueue(Token token)
-{
     if (token.ok)
-        token_queue.emplace_front(token);
+        source++;
     return token;
 }
 

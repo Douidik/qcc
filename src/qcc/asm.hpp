@@ -32,10 +32,9 @@ struct Asm
     Ast &ast;
     Allocator &allocator;
     std::ostream &stream;
-    std::string_view source;
     uint32 label_count;
 
-    Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream);
+    Asm(Ast &ast, Allocator &allocator, std::ostream &stream);
     Label emit_label(Label_Type type);
     virtual void emit() = 0;
 

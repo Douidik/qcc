@@ -114,7 +114,7 @@ void Allocator::create_function_stack(Function_Statement *function_statement)
 
     offset = 0, alignment = 0;
     for (Variable *variable : function->locals | views::filter(on_stack)) {
-        alignment = std::max(alignment, variable->type()->alignment());
+        alignment = Max(alignment, variable->type()->alignment());
     }
     for (Variable *variable : function->locals | views::filter(on_stack)) {
         offset += create_function_stack_push(variable, offset, alignment);
@@ -277,7 +277,7 @@ void Allocator::parse_expression_use_ranges(Expression *expression)
         Invoke_Expression *invoke_expression = (Invoke_Expression *)expression;
         if (invoke_expression->arguments != NULL)
             parse_expression_use_ranges(invoke_expression->arguments);
-        invoke_expression->use_time = std::max((int64)uses_timeline.size() - 1, 0L);
+        invoke_expression->use_time = Max((int64)uses_timeline.size() - 1, 0L);
         break;
     }
 

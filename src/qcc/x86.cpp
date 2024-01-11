@@ -69,8 +69,8 @@ const std::unordered_map<uint64, std::string_view> Cast_Matrix = {
     {Cast_Key(Key_Int64, Key_Int32), "movsxd {}, {}"},
 };
 
-X86::X86(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream) :
-    Asm(ast, allocator, source, stream)
+X86::X86(Ast &ast, Allocator &allocator, std::ostream &stream) :
+    Asm(ast, allocator, stream)
 {
 }
 

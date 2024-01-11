@@ -4,8 +4,8 @@
 namespace qcc
 {
 
-Asm::Asm(Ast &ast, Allocator &allocator, std::string_view source, std::ostream &stream) :
-    ast(ast), stream(stream), allocator(allocator), source(source), label_count(0)
+Asm::Asm(Ast &ast, Allocator &allocator, std::ostream &stream) :
+    ast(ast), stream(stream), allocator(allocator), label_count(0)
 {
 }
 

@@ -3,9 +3,9 @@
 
 #include "fwd.hpp"
 #include "operators.hpp"
-#include "scan/scanner.hpp"
 #include "source_snippet.hpp"
 #include "type_system.hpp"
+#include <deque>
 
 namespace qcc
 {
@@ -28,13 +28,12 @@ enum Expression_Category
 struct Parser
 {
     Ast &ast;
-    Scanner &scanner;
+    Token *source;
     Type_System type_system;
-    std::deque<Token> token_queue;
     std::deque<Statement *> context;
     bool verbose;
 
-    Parser(Ast &ast, Scanner &scanner, bool verbose);
+    Parser(Ast &ast, Token *source, bool verbose);
 
     Statement *parse();
     Statement *parse_statement();
@@ -106,7 +105,6 @@ struct Parser
     Statement *context_push(Statement *statement);
     Statement *context_pop();
 
-    bool is_eof() const;
     Token peek_until(int128 mask);
     Token peek(int128 mask);
     Token scan(int128 mask);

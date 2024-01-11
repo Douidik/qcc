@@ -39,7 +39,7 @@ Node *Parser::parse_new_token()
         return parse_new_token();
 
     case '_':
-        return parse_set(" \v\b\f\t\n");
+        return parse_set(" \v\b\f\t");
     case 'a':
         return parse_set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     case 'o':

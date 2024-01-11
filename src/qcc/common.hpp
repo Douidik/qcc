@@ -77,7 +77,9 @@ static inline std::string fstream_to_str(std::fstream &&fstream)
 
 #define Round_Up(x, y) ((x + y - 1) & ~(y - 1))
 #define Bit(type, n) ((type)1 << n)
-
+#define Min(x, y) (((x) < (y)) ? (x) : (y))
+#define Max(x, y) (((x) > (y)) ? (x) : (y))
+    
 } // namespace qcc
 
 #endif

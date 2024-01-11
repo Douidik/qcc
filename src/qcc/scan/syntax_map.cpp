@@ -6,6 +6,7 @@ namespace qcc
 Syntax_Map syntax_map_c89()
 {
     static const std::pair<Token_Type, Regex> c89_map[] = {
+	{Token_Newline, "'\n'"},
         {Token_Blank, "_+"},
         {Token_Comment, "  {'//' {{{{'\\'^}|^} ~ /'\n'}? /'\n'}}"
                         "| {'/*' ^~                       '*/'}"},
@@ -22,41 +23,41 @@ Syntax_Map syntax_map_c89()
         {Token_Hash_Endif, Hash "'endif'"},
 #undef Hash
 
-#define No_Ids "/ !{a|'_'}"
-        {Token_Sizeof, "'sizeof'" No_Ids},
-        {Token_Auto, "'auto'" No_Ids},
-        {Token_Long, "'long'" No_Ids},
-        {Token_Short, "'short'" No_Ids},
-        {Token_Volatile, "'volatile'" No_Ids},
-        {Token_Const, "'const'" No_Ids},
-        {Token_Extern, "'extern'" No_Ids},
-        {Token_Register, "'register'" No_Ids},
-        {Token_Register, "'restrict'" No_Ids},
-        {Token_Static, "'static'" No_Ids},
-        {Token_Signed, "'signed'" No_Ids},
-        {Token_Unsigned, "'unsigned'" No_Ids},
-        {Token_Enum, "'enum'" No_Ids},
-        {Token_Typedef, "'typedef'" No_Ids},
-        {Token_Union, "'union'" No_Ids},
-        {Token_Struct, "'struct'" No_Ids},
-        {Token_Break, "'break'" No_Ids},
-        {Token_Case, "'case'" No_Ids},
-        {Token_Continue, "'continue'" No_Ids},
-        {Token_Default, "'default'" No_Ids},
-        {Token_Do, "'do'" No_Ids},
-        {Token_Else, "'else'" No_Ids},
-        {Token_For, "'for'" No_Ids},
-        {Token_Goto, "'goto'" No_Ids},
-        {Token_If, "'if'" No_Ids},
-        {Token_Return, "'return'" No_Ids},
-        {Token_Switch, "'switch'" No_Ids},
-        {Token_While, "'while'" No_Ids},
-        {Token_Void_Type, "'void'" No_Ids},
-        {Token_Char_Type, "'char'" No_Ids},
-        {Token_Int_Type, "'int'" No_Ids},
-        {Token_Float_Type, "'float'" No_Ids},
-        {Token_Double_Type, "'double'" No_Ids},
-#undef No_Ids
+#define Keyword_End "/ !{a|'_'}"
+        {Token_Sizeof, "'sizeof'" Keyword_End},
+        {Token_Auto, "'auto'" Keyword_End},
+        {Token_Long, "'long'" Keyword_End},
+        {Token_Short, "'short'" Keyword_End},
+        {Token_Volatile, "'volatile'" Keyword_End},
+        {Token_Const, "'const'" Keyword_End},
+        {Token_Extern, "'extern'" Keyword_End},
+        {Token_Register, "'register'" Keyword_End},
+        {Token_Register, "'restrict'" Keyword_End},
+        {Token_Static, "'static'" Keyword_End},
+        {Token_Signed, "'signed'" Keyword_End},
+        {Token_Unsigned, "'unsigned'" Keyword_End},
+        {Token_Enum, "'enum'" Keyword_End},
+        {Token_Typedef, "'typedef'" Keyword_End},
+        {Token_Union, "'union'" Keyword_End},
+        {Token_Struct, "'struct'" Keyword_End},
+        {Token_Break, "'break'" Keyword_End},
+        {Token_Case, "'case'" Keyword_End},
+        {Token_Continue, "'continue'" Keyword_End},
+        {Token_Default, "'default'" Keyword_End},
+        {Token_Do, "'do'" Keyword_End},
+        {Token_Else, "'else'" Keyword_End},
+        {Token_For, "'for'" Keyword_End},
+        {Token_Goto, "'goto'" Keyword_End},
+        {Token_If, "'if'" Keyword_End},
+        {Token_Return, "'return'" Keyword_End},
+        {Token_Switch, "'switch'" Keyword_End},
+        {Token_While, "'while'" Keyword_End},
+        {Token_Void_Type, "'void'" Keyword_End},
+        {Token_Char_Type, "'char'" Keyword_End},
+        {Token_Int_Type, "'int'" Keyword_End},
+        {Token_Float_Type, "'float'" Keyword_End},
+        {Token_Double_Type, "'double'" Keyword_End},
+#undef Keyword_End
 
 #define Escape_Sequence                                       \
     "{'\\' {q|Q|'\\'|'a'|'b'|'f'|'n'|'r'|'t'|'v'|'?'|'\n'} |" \
@@ -141,7 +142,7 @@ Syntax_Map syntax_map_include()
 {
     static const std::pair<Token_Type, Regex> include_map[] = {
         {Token_Blank, "_+"},
-        {Token_Hash_Project_Filepath, "Q ^~ Q"},
+        {Token_Hash_Cwd_Filepath, "Q ^~ Q"},
         {Token_Hash_System_Filepath, "'<' ^~ '>'"},
         {Token_None, "^~/_"},
     };

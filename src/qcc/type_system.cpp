@@ -62,7 +62,7 @@ size_t Type::alignment()
     case Type_Struct: {
         size_t struct_alignment = 0;
         for (auto [_, member] : struct_statement->members) {
-            struct_alignment = std::max(struct_alignment, member->type()->alignment());
+            struct_alignment = Max(struct_alignment, member->type()->alignment());
         }
         return struct_alignment;
     }
@@ -220,7 +220,7 @@ size_t Type_System::struct_size(Type *type)
 
     for (Variable *member : std::views::values(type->struct_statement->members)) {
         if (type->kind & Type_Union)
-            size = std::max(size, member->type()->size);
+            size = Max(size, member->type()->size);
         if (type->kind & Type_Struct)
             size += member->type()->size;
     }

@@ -1,5 +1,5 @@
-#ifndef SOURCE_SNIPPET_HPP
-#define SOURCE_SNIPPET_HPP
+#ifndef QCC_SOURCE_SNIPPET_HPP
+#define QCC_SOURCE_SNIPPET_HPP
 
 #include "scan/token.hpp"
 #include <algorithm>
@@ -7,7 +7,8 @@
 namespace qcc
 {
 
-std::string make_source_snippet(Token token, std::string_view fmt = "", auto... args)
+// Todo! snippet for multiple line tokens
+std::string make_source_snippet(Token token, std::string_view fmt, auto... args)
 {
     auto digits_count = [](int64 number) -> size_t {
         size_t digits = 1;
@@ -16,20 +17,25 @@ std::string make_source_snippet(Token token, std::string_view fmt = "", auto... 
         return digits;
     };
 
-    std::string_view source = token.source;
-    uint32 line_number = std::count(source.begin(), token.str.begin(), '\n');
-    auto rbegin = std::find(token.str.rend(), source.rend(), '\n');
-    auto begin = std::max(rbegin.base(), source.begin());
-    auto end = std::find(token.str.end(), source.end(), '\n');
-    std::string desc = fmt::format(fmt::runtime(fmt), args...);
-    uint32 cursor = token.str.begin() - begin + digits_count(line_number);
+    Source_Context context = token.context;
+    std::string_view source = context.source;
+    std::string_view str = token.str;
+    std::string snippet = "";
 
-    return fmt::format(R"(with {{
-  {} | {}
-     {:>{}}{:^>{}} {}
-}})",
-                       line_number + 1, std::string_view{begin, end}, "", cursor, "^", token.str.size(),
-                       desc);
+    auto token_rbegin = std::find(str.rend(), source.rend(), '\n');
+    auto line_begin = Max(token_rbegin.base(), source.begin());
+    auto line_end = std::find(str.end(), source.end(), '\n');
+    std::string_view line = {line_begin, line_end};
+    uint32 cursor = str.begin() - line_begin + digits_count(context.line);
+
+#define S std::back_inserter(snippet)
+    fmt::format_to(S, "with ({}:{}) {{\n", context.filepath->str, context.line);
+    fmt::format_to(S, " {} | {}\n", context.line, line);
+    fmt::format_to(S, "    {:>{}}{:^>{}} ", "", cursor, "^", str.size());
+    fmt::format_to(S, fmt::runtime(fmt), args...);
+    fmt::format_to(S, "\n}}");
+#undef S
+    return snippet;
 }
 
 } // namespace qcc
