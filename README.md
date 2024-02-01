@@ -1,6 +1,8 @@
 # 👇 About qcc
-Qcc is an experimental C preprocessor and compiler written in C++.
+qcc is an experimental C preprocessor and x86 compiler written in C++.
 
+## Demonstration
+![screenrecord](screenrecord.gif)
  
 ## Features
 - Fast regex based lexer and tokenizer.
